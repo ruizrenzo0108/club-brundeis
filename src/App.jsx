@@ -1,31 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { Coffee, Award, Sparkles, Check, Smartphone, Store, Plus, RefreshCw, Star, QrCode, Search, UserCheck, UserPlus, ArrowRight } from 'lucide-react';
+import { Coffee, Award, Sparkles, Check, Smartphone, Store, Plus, RefreshCw, Star, QrCode, Search, UserCheck, UserPlus, ArrowRight, Lock, KeyRound, LogOut } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from './supabaseClient';
 
-// --- FORMATEADOR AUTOMÁTICO DE RUT CHILENO ---
+// PIN de acceso a la caja (puedes cambiarlo aquí)
+const PIN_CAJA_CORRECTO = "1234";
+
+// --- FORMATEADOR DE RUT CHILENO ---
 const formatearRut = (valor) => {
   if (!valor) return '';
-  // Limpia puntos, guiones y caracteres raros, permitiendo números y K
   const limpio = valor.replace(/[^0-9kK]/g, '').toUpperCase();
   if (limpio.length === 0) return '';
   if (limpio.length === 1) return limpio;
 
   const cuerpo = limpio.slice(0, -1);
   const dv = limpio.slice(-1);
-
-  // Agrega puntos de miles
   const cuerpoFormateado = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `${cuerpoFormateado}-${dv}`;
 };
 
-// --- FORMATEADOR AUTOMÁTICO DE CELULAR CHILENO (+56 9 XXXX XXXX) ---
+// --- FORMATEADOR DE CELULAR CHILENO ---
 const formatearCelular = (valor) => {
   if (!valor) return '';
-  // Solo toma dígitos
   let soloNumeros = valor.replace(/\D/g, '');
 
-  // Si pegó el 569 al inicio, lo removemos para procesar solo el número local
   if (soloNumeros.startsWith('569')) {
     soloNumeros = soloNumeros.slice(3);
   } else if (soloNumeros.startsWith('56')) {
@@ -34,19 +32,20 @@ const formatearCelular = (valor) => {
     soloNumeros = soloNumeros.slice(1);
   }
 
-  // Limitamos a los 8 dígitos que van después del +56 9
   const digitos = soloNumeros.slice(0, 8);
   if (digitos.length === 0) return '';
-
-  if (digitos.length <= 4) {
-    return `+56 9 ${digitos}`;
-  }
+  if (digitos.length <= 4) return `+56 9 ${digitos}`;
   return `+56 9 ${digitos.slice(0, 4)} ${digitos.slice(4)}`;
 };
 
 export default function App() {
-  const [vista, setVista] = useState('cliente');
+  const [vista, setVista] = useState('cliente'); // 'cliente' | 'caja' | 'registro'
   const [mostrarQR, setMostrarQR] = useState(false);
+
+  // Estados de seguridad para la caja
+  const [cajaAutenticada, setCajaAutenticada] = useState(false);
+  const [pinIngresado, setPinIngresado] = useState("");
+  const [errorPin, setErrorPin] = useState("");
 
   // Cliente activo
   const [cliente, setCliente] = useState({
@@ -65,7 +64,7 @@ export default function App() {
   const [cargando, setCargando] = useState(false);
   const [mensajeCaja, setMensajeCaja] = useState("");
 
-  // Formulario de registro estandarizado
+  // Formulario de registro
   const [formRegistro, setFormRegistro] = useState({
     nombre: "",
     rut: "",
@@ -136,18 +135,29 @@ export default function App() {
     };
   }, [cliente.id, cliente.rut]);
 
+  // Validar PIN de caja
+  const handleVerificarPin = (e) => {
+    e.preventDefault();
+    if (pinIngresado === PIN_CAJA_CORRECTO) {
+      setCajaAutenticada(true);
+      setErrorPin("");
+      setPinIngresado("");
+    } else {
+      setErrorPin("PIN incorrecto. Intenta de nuevo.");
+      setPinIngresado("");
+    }
+  };
+
   // Handlers con formateo en tiempo real
   const handleRutChange = (e) => {
-    const valorFormateado = formatearRut(e.target.value);
-    setFormRegistro(prev => ({ ...prev, rut: valorFormateado }));
+    setFormRegistro(prev => ({ ...prev, rut: formatearRut(e.target.value) }));
   };
 
   const handleTelefonoChange = (e) => {
-    const valorFormateado = formatearCelular(e.target.value);
-    setFormRegistro(prev => ({ ...prev, telefono: valorFormateado }));
+    setFormRegistro(prev => ({ ...prev, telefono: formatearCelular(e.target.value) }));
   };
 
-  // 2. Registrar nuevo cliente
+  // 2. Registrar cliente
   const registrarCliente = async (e) => {
     e.preventDefault();
     if (!formRegistro.nombre.trim()) {
@@ -170,7 +180,7 @@ export default function App() {
             nombre: formRegistro.nombre.trim(),
             rut: formRegistro.rut.trim() || null,
             telefono: formRegistro.telefono.trim() || null,
-            sellos: 1, // Bienvenida
+            sellos: 1,
             tarjetas_completadas: 0,
           },
         ])
@@ -261,7 +271,7 @@ export default function App() {
   return (
     <div className="relative min-h-screen bg-[#0E0B09] text-[#F5EDE2] flex flex-col items-center justify-start p-4 font-sans select-none overflow-x-hidden">
       
-      {/* Fondo nítido del salón Brundeis */}
+      {/* Fondo del salón Brundeis */}
       <div 
         className="fixed inset-0 z-0 bg-cover bg-center filter blur-[1px] opacity-85 brightness-95 pointer-events-none"
         style={{ backgroundImage: "url('/fondo.JPG')" }}
@@ -517,93 +527,143 @@ export default function App() {
         {/* ================= VISTA CAJA ================= */}
         {vista === 'caja' && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-6">
-            <div className="border-b border-[#332822] pb-3 flex justify-between items-end">
-              <div>
-                <h2 className="text-xl font-bold text-[#F5EDE2]">Terminal de Barra</h2>
-                <p className="text-xs text-[#A89A90]">Buscar por RUT o Celular</p>
-              </div>
-              <button
-                onClick={() => setVista('registro')}
-                className="text-[11px] text-[#D99B52] hover:underline flex items-center gap-1 font-semibold"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                + Nuevo
-              </button>
-            </div>
+            
+            {/* Si NO está autenticado, pide el PIN */}
+            {!cajaAutenticada ? (
+              <form onSubmit={handleVerificarPin} className="space-y-5 text-center">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-[#261E1A] border border-[#4A3B32] flex items-center justify-center text-[#D99B52] shadow-inner mb-2">
+                  <Lock className="w-6 h-6 stroke-[2]" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-[#F5EDE2]">Acceso Restringido</h2>
+                  <p className="text-xs text-[#A89A90] mt-1">Ingresa el PIN de barra para operar la caja</p>
+                </div>
 
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block">
-                RUT o Celular del Cliente
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Ej: 29.405.670-K ó 982991805"
-                  value={inputBusqueda}
-                  onChange={(e) => setInputBusqueda(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && buscarCliente(inputBusqueda)}
-                  className="flex-1 bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
-                />
+                <div>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    autoFocus
+                    placeholder="••••"
+                    value={pinIngresado}
+                    onChange={(e) => setPinIngresado(e.target.value)}
+                    className="w-36 mx-auto text-center tracking-[0.5em] text-2xl font-mono bg-[#14100E] border border-[#3E3029] rounded-2xl py-3 text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
+                  />
+                  {errorPin && (
+                    <p className="text-xs text-[#E57373] font-medium mt-2">{errorPin}</p>
+                  )}
+                </div>
+
                 <button
-                  onClick={() => buscarCliente(inputBusqueda)}
-                  disabled={cargando || !inputBusqueda}
-                  className="bg-[#241D19] border border-[#4A3B32] hover:bg-[#2F241F] text-[#D99B52] px-4 rounded-xl flex items-center justify-center transition"
+                  type="submit"
+                  className="w-full py-3.5 bg-gradient-to-r from-[#B3762E] to-[#D99B52] hover:brightness-110 text-[#14100E] font-bold rounded-2xl flex items-center justify-center gap-2 text-sm shadow-lg shadow-[#C98A42]/25 transition"
                 >
-                  <Search className="w-4 h-4" />
+                  <KeyRound className="w-4 h-4 stroke-[2.5]" />
+                  Desbloquear Caja
                 </button>
-              </div>
-              {mensajeCaja && (
-                <p className="text-xs text-[#D99B52] font-medium pt-1">{mensajeCaja}</p>
-              )}
-            </div>
+              </form>
+            ) : (
+              /* Si YA está autenticado, muestra la terminal completa */
+              <div className="space-y-6">
+                <div className="border-b border-[#332822] pb-3 flex justify-between items-center">
+                  <div>
+                    <h2 className="text-xl font-bold text-[#F5EDE2]">Terminal Barra</h2>
+                    <p className="text-xs text-[#A89A90]">Buscar por RUT o Celular</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setVista('registro')}
+                      className="text-[11px] text-[#D99B52] hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      + Nuevo
+                    </button>
+                    <button
+                      onClick={() => setCajaAutenticada(false)}
+                      title="Bloquear caja"
+                      className="text-[#A89A90] hover:text-[#E57373] p-1.5 rounded-lg border border-[#3E3029] bg-[#14100E]"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
 
-            <div className="bg-[#241D19] border border-[#3E3029] rounded-2xl p-4 space-y-2.5 shadow-sm">
-              <div className="flex justify-between text-xs text-[#A89A90]">
-                <span>Cliente cargado:</span>
-                <span className="text-[#F5EDE2] font-semibold flex items-center gap-1">
-                  <UserCheck className="w-3.5 h-3.5 text-[#D99B52]" />
-                  {cliente.nombre}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs text-[#A89A90]">
-                <span>RUT:</span>
-                <span className="font-mono text-[#D99B52]">{cliente.rut || 'No registrado'}</span>
-              </div>
-              <div className="flex justify-between text-xs text-[#A89A90]">
-                <span>Teléfono:</span>
-                <span className="font-mono text-[#A89A90]">{cliente.telefono || 'No registrado'}</span>
-              </div>
-              <div className="flex justify-between text-xs text-[#A89A90]">
-                <span>Progreso:</span>
-                <span className="text-[#D99B52] font-bold text-sm">{cliente.sellos} / {cliente.meta}</span>
-              </div>
-            </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block">
+                    RUT o Celular del Cliente
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Ej: 29.405.670-K ó 982991805"
+                      value={inputBusqueda}
+                      onChange={(e) => setInputBusqueda(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && buscarCliente(inputBusqueda)}
+                      className="flex-1 bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
+                    />
+                    <button
+                      onClick={() => buscarCliente(inputBusqueda)}
+                      disabled={cargando || !inputBusqueda}
+                      className="bg-[#241D19] border border-[#4A3B32] hover:bg-[#2F241F] text-[#D99B52] px-4 rounded-xl flex items-center justify-center transition"
+                    >
+                      <Search className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {mensajeCaja && (
+                    <p className="text-xs text-[#D99B52] font-medium pt-1">{mensajeCaja}</p>
+                  )}
+                </div>
 
-            <div className="space-y-3">
-              <button
-                onClick={sumarSello}
-                disabled={esCompletada || cargando}
-                className={`w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-sm tracking-wide transition-all ${
-                  esCompletada || cargando
-                    ? 'bg-[#241D19] text-[#6E5D53] cursor-not-allowed border border-[#382B24]'
-                    : 'bg-gradient-to-r from-[#B3762E] to-[#D99B52] hover:brightness-110 text-[#14100E] shadow-lg shadow-[#C98A42]/25 active:scale-98'
-                }`}
-              >
-                <Plus className="w-5 h-5 stroke-[2.5]" />
-                {cargando ? "Guardando en Supabase..." : "Acreditar Visita (+1 Sello)"}
-              </button>
+                <div className="bg-[#241D19] border border-[#3E3029] rounded-2xl p-4 space-y-2.5 shadow-sm">
+                  <div className="flex justify-between text-xs text-[#A89A90]">
+                    <span>Cliente cargado:</span>
+                    <span className="text-[#F5EDE2] font-semibold flex items-center gap-1">
+                      <UserCheck className="w-3.5 h-3.5 text-[#D99B52]" />
+                      {cliente.nombre}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs text-[#A89A90]">
+                    <span>RUT:</span>
+                    <span className="font-mono text-[#D99B52]">{cliente.rut || 'No registrado'}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-[#A89A90]">
+                    <span>Teléfono:</span>
+                    <span className="font-mono text-[#A89A90]">{cliente.telefono || 'No registrado'}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-[#A89A90]">
+                    <span>Progreso:</span>
+                    <span className="text-[#D99B52] font-bold text-sm">{cliente.sellos} / {cliente.meta}</span>
+                  </div>
+                </div>
 
-              {esCompletada && (
-                <button
-                  onClick={canjearPremio}
-                  disabled={cargando}
-                  className="w-full py-3.5 bg-[#241D19] hover:bg-[#2C231E] border border-[#C98A42]/50 rounded-2xl font-semibold flex items-center justify-center gap-2 text-xs text-[#F5EDE2] transition"
-                >
-                  <RefreshCw className="w-4 h-4 text-[#D99B52]" />
-                  Canjear Premio y Abrir Nueva Tarjeta
-                </button>
-              )}
-            </div>
+                <div className="space-y-3">
+                  <button
+                    onClick={sumarSello}
+                    disabled={esCompletada || cargando}
+                    className={`w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 text-sm tracking-wide transition-all ${
+                      esCompletada || cargando
+                        ? 'bg-[#241D19] text-[#6E5D53] cursor-not-allowed border border-[#382B24]'
+                        : 'bg-gradient-to-r from-[#B3762E] to-[#D99B52] hover:brightness-110 text-[#14100E] shadow-lg shadow-[#C98A42]/25 active:scale-98'
+                    }`}
+                  >
+                    <Plus className="w-5 h-5 stroke-[2.5]" />
+                    {cargando ? "Guardando en Supabase..." : "Acreditar Visita (+1 Sello)"}
+                  </button>
+
+                  {esCompletada && (
+                    <button
+                      onClick={canjearPremio}
+                      disabled={cargando}
+                      className="w-full py-3.5 bg-[#241D19] hover:bg-[#2C231E] border border-[#C98A42]/50 rounded-2xl font-semibold flex items-center justify-center gap-2 text-xs text-[#F5EDE2] transition"
+                    >
+                      <RefreshCw className="w-4 h-4 text-[#D99B52]" />
+                      Canjear Premio y Abrir Nueva Tarjeta
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
