@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Coffee, Award, Sparkles, Check, Smartphone, Store, Plus, 
   RefreshCw, Star, QrCode, Search, UserCheck, ArrowRight, 
-  Lock, KeyRound, LogOut, Camera, X, LogIn
+  Lock, KeyRound, LogOut, Camera, X, LogIn, UserPlus
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -12,27 +12,76 @@ const PIN_CAJA_CORRECTO = "Brunde1865";
 const META_SELLOS = 8;
 const PREMIO_TEXTO = "Café de Especialidad o Postre a elección";
 
-// --- FORMATEADOR AUTOMÁTICO DE RUT CHILENO ---
-const formatearRut = (valor) => {
+// =========================================================================
+// UTILIDADES DE RUT CHILENO (FORMATO Y VALIDACIÓN OFICIAL MÓDULO 11)
+// =========================================================================
+
+// Limpia el RUT dejando solo dígitos y K mayúscula
+const limpiarRut = (valor) => {
   if (!valor) return '';
-  const limpio = valor.replace(/[^0-9kK]/g, '').toUpperCase();
-  if (limpio.length === 0) return '';
-  if (limpio.length === 1) return limpio;
+  return valor.toString().replace(/[^0-9kK]/g, '').toUpperCase();
+};
+
+// Formatea en tiempo real mientras el usuario escribe o pega
+const formatearRutEnVivo = (valor) => {
+  const limpio = limpiarRut(valor);
+  if (!limpio) return '';
+  
+  // Limitar a 9 caracteres (ej: 22.232.223-4 o 9.123.456-7)
+  const recortado = limpio.slice(0, 9);
+  if (recortado.length === 1) return recortado;
+
+  const cuerpo = recortado.slice(0, -1);
+  const dv = recortado.slice(-1);
+
+  // Inserción de puntos de miles
+  const cuerpoConPuntos = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${cuerpoConPuntos}-${dv}`;
+};
+
+// Validación matemática oficial de RUT chileno
+const validarRutChileno = (rutFormateado) => {
+  const limpio = limpiarRut(rutFormateado);
+  if (limpio.length < 7 || limpio.length > 9) return false;
 
   const cuerpo = limpio.slice(0, -1);
   const dv = limpio.slice(-1);
-  const cuerpoFormateado = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `${cuerpoFormateado}-${dv}`;
+
+  let suma = 0;
+  let multiplo = 2;
+
+  for (let i = cuerpo.length - 1; i >= 0; i--) {
+    suma += parseInt(cuerpo.charAt(i), 10) * multiplo;
+    multiplo = multiplo < 7 ? multiplo + 1 : 2;
+  }
+
+  const resto = 11 - (suma % 11);
+  let dvEsperado = '';
+  if (resto === 11) dvEsperado = '0';
+  else if (resto === 10) dvEsperado = 'K';
+  else dvEsperado = resto.toString();
+
+  return dv === dvEsperado;
 };
 
 export default function App() {
-  const [vista, setVista] = useState('cliente'); // 'cliente' | 'registro' | 'login' | 'caja'
+  const [vista, setVista] = useState('cliente'); // 'cliente' | 'consulta_rut' | 'registro' | 'caja'
   const [mostrarQR, setMostrarQR] = useState(false);
 
-  // 1. Sesión del cliente
+  // 1. Cliente activo
   const [clienteActual, setClienteActual] = useState(null);
 
-  // 2. Terminal de Caja (Búsqueda exclusiva por RUT)
+  // 2. Consulta de cliente por RUT
+  const [inputRutCliente, setInputRutCliente] = useState("");
+  const [mensajeConsultaCliente, setMensajeConsultaCliente] = useState("");
+  const [cargandoConsultaCliente, setCargandoConsultaCliente] = useState(false);
+
+  // 3. Registro nuevo cliente
+  const [formRegistro, setFormRegistro] = useState({ nombre: "", rut: "" });
+  const [mensajeRegistro, setMensajeRegistro] = useState("");
+  const [cargandoRegistro, setCargandoRegistro] = useState(false);
+
+  // 4. Terminal de Caja
   const [cajaAutenticada, setCajaAutenticada] = useState(false);
   const [pinIngresado, setPinIngresado] = useState("");
   const [errorPin, setErrorPin] = useState("");
@@ -43,15 +92,6 @@ export default function App() {
   const [escaneandoQR, setEscaneandoQR] = useState(false);
   const scannerRef = useRef(null);
 
-  // 3. Formularios
-  const [formRegistro, setFormRegistro] = useState({ nombre: "", rut: "" });
-  const [mensajeRegistro, setMensajeRegistro] = useState("");
-  const [cargandoRegistro, setCargandoRegistro] = useState(false);
-
-  const [inputLoginRut, setInputLoginRut] = useState("");
-  const [mensajeLogin, setMensajeLogin] = useState("");
-  const [cargandoLogin, setCargandoLogin] = useState(false);
-
   // =========================================================================
   // GESTIÓN DE SESIÓN LOCAL
   // =========================================================================
@@ -60,7 +100,7 @@ export default function App() {
     if (sesionId) {
       cargarClientePorId(sesionId);
     } else {
-      setVista('registro');
+      setVista('consulta_rut');
     }
   }, []);
 
@@ -78,16 +118,16 @@ export default function App() {
       } else {
         localStorage.removeItem('brundeis_cliente_id');
         setClienteActual(null);
-        setVista('registro');
+        setVista('consulta_rut');
       }
     } catch {
       localStorage.removeItem('brundeis_cliente_id');
       setClienteActual(null);
-      setVista('registro');
+      setVista('consulta_rut');
     }
   };
 
-  // Suscripción en tiempo real
+  // Suscripción Realtime para la tarjeta activa
   useEffect(() => {
     if (!clienteActual?.id) return;
 
@@ -117,25 +157,70 @@ export default function App() {
   const cerrarSesionCliente = () => {
     localStorage.removeItem('brundeis_cliente_id');
     setClienteActual(null);
-    setVista('registro');
+    setInputRutCliente("");
+    setVista('consulta_rut');
   };
 
   // =========================================================================
-  // REGISTRO E INICIO DE SESIÓN
+  // 1. CONSULTA DE CLIENTE POR RUT (PANTALLA CLIENTE)
+  // =========================================================================
+  const consultarTarjetaCliente = async (e) => {
+    e.preventDefault();
+    setMensajeConsultaCliente("");
+
+    const rutFormateado = inputRutCliente.trim();
+    const rutLimpio = limpiarRut(rutFormateado);
+
+    if (!validarRutChileno(rutFormateado)) {
+      setMensajeConsultaCliente("El RUT ingresado no es válido.");
+      return;
+    }
+
+    setCargandoConsultaCliente(true);
+
+    try {
+      // Búsqueda flexible: encuentra el RUT formateado o limpio en la BD
+      const { data, error } = await supabase
+        .from('clientes')
+        .select('*')
+        .or(`rut.eq.${rutFormateado},rut.eq.${rutLimpio}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (error || !data) {
+        setMensajeConsultaCliente("No se encontró ninguna tarjeta asociada a este RUT.");
+      } else {
+        localStorage.setItem('brundeis_cliente_id', data.id);
+        setClienteActual(data);
+        setInputRutCliente("");
+        setVista('cliente');
+      }
+    } catch {
+      setMensajeConsultaCliente("Error de conexión al consultar la tarjeta.");
+    } finally {
+      setCargandoConsultaCliente(false);
+    }
+  };
+
+  // =========================================================================
+  // 2. REGISTRO DE NUEVO CLIENTE
   // =========================================================================
   const registrarNuevoCliente = async (e) => {
     e.preventDefault();
+    setMensajeRegistro("");
+
     if (!formRegistro.nombre.trim()) {
       setMensajeRegistro("Ingresa tu nombre completo.");
       return;
     }
-    if (!formRegistro.rut.trim()) {
-      setMensajeRegistro("Ingresa un RUT válido.");
+
+    const rutFormateado = formRegistro.rut.trim();
+    if (!validarRutChileno(rutFormateado)) {
+      setMensajeRegistro("El RUT ingresado no es válido.");
       return;
     }
 
     setCargandoRegistro(true);
-    setMensajeRegistro("");
 
     try {
       const { data, error } = await supabase
@@ -143,8 +228,8 @@ export default function App() {
         .insert([
           {
             nombre: formRegistro.nombre.trim(),
-            rut: formRegistro.rut.trim(),
-            sellos: 1, // Sello de bienvenida
+            rut: rutFormateado,
+            sellos: 1, // Sello de bienvenida automático
             tarjetas_completadas: 0,
           },
         ])
@@ -153,9 +238,9 @@ export default function App() {
 
       if (error) {
         if (error.code === '23505') {
-          setMensajeRegistro("Este RUT ya está registrado. Inicia sesión abajo.");
+          setMensajeRegistro("Este RUT ya se encuentra registrado. Ingresa directamente.");
         } else {
-          setMensajeRegistro("Error al registrar la tarjeta. Intenta nuevamente.");
+          setMensajeRegistro("Error al crear la tarjeta. Intenta nuevamente.");
         }
       } else if (data) {
         localStorage.setItem('brundeis_cliente_id', data.id);
@@ -164,45 +249,14 @@ export default function App() {
         setVista('cliente');
       }
     } catch {
-      setMensajeRegistro("Error de conexión al registrar.");
+      setMensajeRegistro("Error al conectar con la base de datos.");
     } finally {
       setCargandoRegistro(false);
     }
   };
 
-  const iniciarSesionCliente = async (e) => {
-    e.preventDefault();
-    if (!inputLoginRut.trim()) return;
-
-    setCargandoLogin(true);
-    setMensajeLogin("");
-
-    try {
-      const rutBuscado = inputLoginRut.trim();
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('*')
-        .ilike('rut', rutBuscado)
-        .limit(1)
-        .maybeSingle();
-
-      if (error || !data) {
-        setMensajeLogin("No encontramos ninguna tarjeta con ese RUT.");
-      } else {
-        localStorage.setItem('brundeis_cliente_id', data.id);
-        setClienteActual(data);
-        setInputLoginRut("");
-        setVista('cliente');
-      }
-    } catch {
-      setMensajeLogin("Error al buscar la tarjeta.");
-    } finally {
-      setCargandoLogin(false);
-    }
-  };
-
   // =========================================================================
-  // CAJA / TERMINAL DE BARRA (SOLO RUT)
+  // 3. CAJA / TERMINAL DE BARRA (BÚSQUEDA EXCLUSIVA POR RUT Y QR)
   // =========================================================================
   const handleVerificarPin = (e) => {
     e.preventDefault();
@@ -223,25 +277,44 @@ export default function App() {
 
     try {
       const limpio = termino.trim();
-      let query = supabase.from('clientes').select('*');
+      let data = null;
+      let error = null;
 
-      // Si viene desde el escaneo QR con prefijo
+      // Si viene por escaneo QR
       if (limpio.startsWith('BRUNDEIS:')) {
         const idCliente = limpio.replace('BRUNDEIS:', '');
-        query = query.eq('id', idCliente);
+        const res = await supabase.from('clientes').select('*').eq('id', idCliente).maybeSingle();
+        data = res.data;
+        error = res.error;
       } else {
-        // Búsqueda manual únicamente por RUT
-        query = query.ilike('rut', limpio);
-      }
+        // Búsqueda manual por RUT
+        const rutFormateado = formatearRutEnVivo(limpio);
+        const rutLimpio = limpiarRut(limpio);
 
-      const { data, error } = await query.limit(1).maybeSingle();
+        if (!validarRutChileno(rutFormateado)) {
+          setClienteCaja(null);
+          setMensajeCaja({ texto: "El RUT ingresado no es válido.", tipo: "error" });
+          setCargandoCaja(false);
+          return;
+        }
+
+        const res = await supabase
+          .from('clientes')
+          .select('*')
+          .or(`rut.eq.${rutFormateado},rut.eq.${rutLimpio}`)
+          .limit(1)
+          .maybeSingle();
+
+        data = res.data;
+        error = res.error;
+      }
 
       if (error || !data) {
         setClienteCaja(null);
-        setMensajeCaja({ texto: "Cliente no registrado o RUT incorrecto.", tipo: "error" });
+        setMensajeCaja({ texto: "No se encontró ningún cliente registrado con este RUT.", tipo: "error" });
       } else {
         setClienteCaja(data);
-        setMensajeCaja({ texto: "Cliente identificado exitosamente.", tipo: "exito" });
+        setMensajeCaja({ texto: "Cliente identificado correctamente.", tipo: "exito" });
         setInputRutCaja("");
       }
     } catch {
@@ -251,7 +324,7 @@ export default function App() {
     }
   };
 
-  // Escáner de cámara
+  // Escáner de cámara en caja
   const iniciarEscanerCamara = () => {
     setEscaneandoQR(true);
     setMensajeCaja({ texto: "", tipo: "" });
@@ -270,7 +343,7 @@ export default function App() {
           },
           () => {}
         ).catch(() => {
-          setMensajeCaja({ texto: "No se pudo acceder a la cámara.", tipo: "error" });
+          setMensajeCaja({ texto: "No se pudo acceder a la cámara del dispositivo.", tipo: "error" });
           setEscaneandoQR(false);
         });
       } catch {
@@ -304,7 +377,7 @@ export default function App() {
         setClienteCaja(prev => ({ ...prev, sellos: nuevosSellos }));
         setMensajeCaja({ texto: `¡Sello acreditado! (${nuevosSellos}/${META_SELLOS})`, tipo: "exito" });
       } else {
-        setMensajeCaja({ texto: "Error al guardar el sello.", tipo: "error" });
+        setMensajeCaja({ texto: "Error al registrar el sello.", tipo: "error" });
       }
     } finally {
       setCargandoCaja(false);
@@ -351,7 +424,7 @@ export default function App() {
   return (
     <div className="relative min-h-screen bg-[#0E0B09] text-[#F5EDE2] flex flex-col items-center justify-start p-4 font-sans select-none overflow-x-hidden">
       
-      {/* Fondo del local */}
+      {/* Fondo visual */}
       <div 
         className="fixed inset-0 z-0 bg-cover bg-center filter blur-[1px] opacity-85 brightness-95 pointer-events-none"
         style={{ backgroundImage: "url('/fondo.JPG')" }}
@@ -364,15 +437,15 @@ export default function App() {
         {/* Selector de Navegación Superior */}
         <div className="flex bg-[#1E1815]/95 backdrop-blur-md border border-[#4A3B32] p-1.5 rounded-2xl mb-6 shadow-2xl">
           <button
-            onClick={() => setVista(clienteActual ? 'cliente' : 'registro')}
+            onClick={() => setVista(clienteActual ? 'cliente' : 'consulta_rut')}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all ${
-              vista === 'cliente' || vista === 'registro' || vista === 'login'
+              vista === 'cliente' || vista === 'consulta_rut' || vista === 'registro'
                 ? 'bg-[#C98A42] text-[#14100E] shadow-md shadow-[#C98A42]/30 font-bold'
                 : 'text-[#A89A90] hover:text-[#F5EDE2]'
             }`}
           >
             <Smartphone className="w-3.5 h-3.5" />
-            {clienteActual ? 'Mi Tarjeta' : 'Registrarse'}
+            {clienteActual ? 'Mi Tarjeta' : 'Consultar Tarjeta'}
           </button>
           
           <button
@@ -391,7 +464,142 @@ export default function App() {
           </button>
         </div>
 
-        {/* ================= VISTA CLIENTE ================= */}
+        {/* ================================================================= */}
+        {/* 1. CONSULTA DIRECTA DE TARJETA POR RUT (CLIENTE)                 */}
+        {/* ================================================================= */}
+        {vista === 'consulta_rut' && !clienteActual && (
+          <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
+            <div className="border-b border-[#332822] pb-3 text-center">
+              <span className="text-[10px] font-bold tracking-[0.2em] text-[#D99B52] uppercase">
+                Club Brundeis
+              </span>
+              <h2 className="text-xl font-black text-[#F5EDE2] mt-0.5">Consulta tu Tarjeta</h2>
+              <p className="text-xs text-[#A89A90] mt-1">
+                Ingresa únicamente tu RUT para ver tus sellos
+              </p>
+            </div>
+
+            <form onSubmit={consultarTarjetaCliente} className="space-y-4">
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider">
+                    RUT
+                  </label>
+                  <span className="text-[10px] text-[#A89A90]">Formato automático</span>
+                </div>
+                <input
+                  type="text"
+                  maxLength={12}
+                  placeholder="Ej: 22.232.223-4"
+                  autoFocus
+                  required
+                  value={inputRutCliente}
+                  onChange={(e) => setInputRutCliente(formatearRutEnVivo(e.target.value))}
+                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3.5 text-base font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider text-center"
+                />
+              </div>
+
+              {mensajeConsultaCliente && (
+                <p className="text-xs text-[#E57373] text-center font-medium">{mensajeConsultaCliente}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={cargandoConsultaCliente || !inputRutCliente}
+                className="w-full py-4 bg-gradient-to-r from-[#B3762E] to-[#D99B52] hover:brightness-110 text-[#14100E] font-bold rounded-2xl flex items-center justify-center gap-2 text-sm shadow-lg shadow-[#C98A42]/25 transition"
+              >
+                <LogIn className="w-4 h-4 stroke-[2.5]" />
+                <span>{cargandoConsultaCliente ? "Consultando..." : "Ver mi Tarjeta"}</span>
+              </button>
+            </form>
+
+            <div className="border-t border-[#2C221D] pt-3 text-center">
+              <button
+                onClick={() => setVista('registro')}
+                className="text-xs text-[#D99B52] hover:underline font-medium"
+              >
+                ¿No tienes tarjeta aún? Regístrate aquí
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================= */}
+        {/* 2. REGISTRO DE NUEVO CLIENTE                                      */}
+        {/* ================================================================= */}
+        {vista === 'registro' && !clienteActual && (
+          <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
+            <div className="border-b border-[#332822] pb-3 text-center">
+              <span className="text-[10px] font-bold tracking-[0.2em] text-[#D99B52] uppercase">
+                Bienvenido
+              </span>
+              <h2 className="text-xl font-black text-[#F5EDE2] mt-0.5">Club Brundeis</h2>
+              <p className="text-xs text-[#A89A90] mt-1">
+                Regístrate y recibe tu <strong className="text-[#D99B52]">primer sello gratis</strong>.
+              </p>
+            </div>
+
+            <form onSubmit={registrarNuevoCliente} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block mb-1">
+                  Tu Nombre Completo *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Constanza Morales"
+                  required
+                  value={formRegistro.nombre}
+                  onChange={(e) => setFormRegistro({ ...formRegistro, nombre: e.target.value })}
+                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider">
+                    RUT *
+                  </label>
+                  <span className="text-[10px] text-[#A89A90]">Formato automático</span>
+                </div>
+                <input
+                  type="text"
+                  required
+                  maxLength={12}
+                  placeholder="Ej: 22.232.223-4"
+                  value={formRegistro.rut}
+                  onChange={(e) => setFormRegistro(prev => ({ ...prev, rut: formatearRutEnVivo(e.target.value) }))}
+                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
+                />
+              </div>
+
+              {mensajeRegistro && (
+                <p className="text-xs text-[#E57373] text-center font-medium">{mensajeRegistro}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={cargandoRegistro}
+                className="w-full py-4 bg-gradient-to-r from-[#B3762E] to-[#D99B52] hover:brightness-110 text-[#14100E] font-bold rounded-2xl flex items-center justify-center gap-2 text-sm shadow-lg shadow-[#C98A42]/25 transition"
+              >
+                <span>{cargandoRegistro ? "Creando tarjeta..." : "Crear mi Tarjeta Digital"}</span>
+                <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+              </button>
+            </form>
+
+            <div className="border-t border-[#2C221D] pt-3 text-center">
+              <button
+                onClick={() => setVista('consulta_rut')}
+                className="text-xs text-[#D99B52] hover:underline font-medium"
+              >
+                ¿Ya tienes tarjeta? Consulta con tu RUT
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ================================================================= */}
+        {/* 3. VISUALIZACIÓN DE TARJETA DE FIDELIZACIÓN                       */}
+        {/* ================================================================= */}
         {vista === 'cliente' && clienteActual && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-6 relative overflow-hidden">
             <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#C98A42]/20 rounded-full blur-3xl pointer-events-none" />
@@ -413,12 +621,13 @@ export default function App() {
               </div>
             </div>
 
+            {/* Datos Personales */}
             <div className="flex justify-between items-center bg-[#241D19]/90 border border-[#3E3029] rounded-2xl p-3.5 px-4 shadow-sm">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-[#A89A90] font-semibold">Titular</p>
                 <p className="text-base font-bold text-[#F5EDE2]">{clienteActual.nombre}</p>
                 <span className="text-[11px] font-mono text-[#D99B52] mt-0.5 block">
-                  RUT: {clienteActual.rut}
+                  RUT: {formatearRutEnVivo(clienteActual.rut)}
                 </span>
               </div>
               <button
@@ -430,6 +639,7 @@ export default function App() {
               </button>
             </div>
 
+            {/* QR Dinámico */}
             {mostrarQR && (
               <div className="bg-[#14100E] border border-[#4A3B32] rounded-2xl p-5 flex flex-col items-center text-center space-y-3 shadow-inner">
                 <p className="text-xs text-[#A89A90]">Muestra este código en la barra para que el cajero lo escanee:</p>
@@ -443,12 +653,12 @@ export default function App() {
                   />
                 </div>
                 <div className="text-[11px] font-mono text-[#D99B52]">
-                  RUT: {clienteActual.rut}
+                  RUT: {formatearRutEnVivo(clienteActual.rut)}
                 </div>
               </div>
             )}
 
-            {/* Sellos */}
+            {/* Grilla de Sellos */}
             <div className="bg-[#14100E]/95 border border-[#382B24] rounded-2xl p-5 shadow-inner">
               <div className="grid grid-cols-4 gap-3 place-items-center">
                 {Array.from({ length: META_SELLOS }).map((_, index) => {
@@ -500,6 +710,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* Recompensa */}
             <div className="bg-[#241D19]/90 border border-[#4A3B32] rounded-2xl p-4 flex items-start gap-3.5 shadow-md">
               <div className="p-2.5 bg-[#C98A42]/20 border border-[#C98A42]/40 rounded-xl text-[#D99B52] mt-0.5">
                 <Award className="w-5 h-5 stroke-[2]" />
@@ -521,141 +732,15 @@ export default function App() {
                 className="text-xs text-[#8C7E75] hover:text-[#E57373] transition flex items-center justify-center gap-1 mx-auto"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                Salir de mi cuenta / Cambiar de cliente
+                Consultar otro RUT
               </button>
             </div>
           </div>
         )}
 
-        {/* ================= VISTA REGISTRO ================= */}
-        {vista === 'registro' && (
-          <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
-            <div className="border-b border-[#332822] pb-3 text-center">
-              <span className="text-[10px] font-bold tracking-[0.2em] text-[#D99B52] uppercase">
-                Bienvenido
-              </span>
-              <h2 className="text-xl font-black text-[#F5EDE2] mt-0.5">Club Brundeis</h2>
-              <p className="text-xs text-[#A89A90] mt-1">
-                Regístrate y recibe tu <strong className="text-[#D99B52]">primer sello gratis</strong> de bienvenida.
-              </p>
-            </div>
-
-            <form onSubmit={registrarNuevoCliente} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block mb-1">
-                  Tu Nombre Completo *
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ej: Constanza Morales"
-                  required
-                  value={formRegistro.nombre}
-                  onChange={(e) => setFormRegistro({ ...formRegistro, nombre: e.target.value })}
-                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider">
-                    RUT *
-                  </label>
-                  <span className="text-[10px] text-[#A89A90]">Automático con puntos y guion</span>
-                </div>
-                <input
-                  type="text"
-                  required
-                  maxLength={12}
-                  placeholder="Ej: 18.234.567-8"
-                  value={formRegistro.rut}
-                  onChange={(e) => setFormRegistro(prev => ({ ...prev, rut: formatearRut(e.target.value) }))}
-                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
-                />
-              </div>
-
-              {mensajeRegistro && (
-                <p className="text-xs text-[#E57373] text-center font-medium">{mensajeRegistro}</p>
-              )}
-
-              <button
-                type="submit"
-                disabled={cargandoRegistro}
-                className="w-full py-4 bg-gradient-to-r from-[#B3762E] to-[#D99B52] hover:brightness-110 text-[#14100E] font-bold rounded-2xl flex items-center justify-center gap-2 text-sm shadow-lg shadow-[#C98A42]/25 transition"
-              >
-                <span>{cargandoRegistro ? "Creando tarjeta..." : "Crear mi Tarjeta Digital"}</span>
-                <ArrowRight className="w-4 h-4 stroke-[2.5]" />
-              </button>
-            </form>
-
-            <div className="border-t border-[#2C221D] pt-3 text-center">
-              <button
-                onClick={() => setVista('login')}
-                className="text-xs text-[#D99B52] hover:underline font-medium"
-              >
-                ¿Ya tienes tarjeta registrada? Ingresa aquí
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ================= VISTA LOGIN (SOLO RUT CON FORMATO) ================= */}
-        {vista === 'login' && (
-          <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
-            <div className="border-b border-[#332822] pb-3 text-center">
-              <span className="text-[10px] font-bold tracking-[0.2em] text-[#D99B52] uppercase">
-                Club Brundeis
-              </span>
-              <h2 className="text-xl font-black text-[#F5EDE2] mt-0.5">Ver mi Tarjeta</h2>
-              <p className="text-xs text-[#A89A90] mt-1">
-                Ingresa con tu RUT registrado
-              </p>
-            </div>
-
-            <form onSubmit={iniciarSesionCliente} className="space-y-4">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider">
-                    RUT
-                  </label>
-                  <span className="text-[10px] text-[#A89A90]">Formato automático</span>
-                </div>
-                <input
-                  type="text"
-                  maxLength={12}
-                  placeholder="Ej: 18.234.567-8"
-                  required
-                  value={inputLoginRut}
-                  onChange={(e) => setInputLoginRut(formatearRut(e.target.value))}
-                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
-                />
-              </div>
-
-              {mensajeLogin && (
-                <p className="text-xs text-[#E57373] text-center font-medium">{mensajeLogin}</p>
-              )}
-
-              <button
-                type="submit"
-                disabled={cargandoLogin}
-                className="w-full py-4 bg-gradient-to-r from-[#B3762E] to-[#D99B52] hover:brightness-110 text-[#14100E] font-bold rounded-2xl flex items-center justify-center gap-2 text-sm shadow-lg shadow-[#C98A42]/25 transition"
-              >
-                <LogIn className="w-4 h-4 stroke-[2.5]" />
-                <span>{cargandoLogin ? "Buscando..." : "Abrir mi Tarjeta"}</span>
-              </button>
-            </form>
-
-            <div className="border-t border-[#2C221D] pt-3 text-center">
-              <button
-                onClick={() => setVista('registro')}
-                className="text-xs text-[#A89A90] hover:text-[#F5EDE2] font-medium"
-              >
-                ← Volver al formulario de registro
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ================= VISTA CAJA (SOLO RUT Y QR) ================= */}
+        {/* ================================================================= */}
+        {/* 4. TERMINAL DE CAJA (BÚSQUEDA EXCLUSIVA POR RUT Y QR)             */}
+        {/* ================================================================= */}
         {vista === 'caja' && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-6">
             
@@ -736,7 +821,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Búsqueda manual SOLO por RUT con formato automático */}
+                {/* Búsqueda manual por RUT con autoformato en tiempo real */}
                 {!clienteCaja && (
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
@@ -749,9 +834,9 @@ export default function App() {
                       <input
                         type="text"
                         maxLength={12}
-                        placeholder="Ej: 18.234.567-8"
+                        placeholder="Ej: 22.232.223-4"
                         value={inputRutCaja}
-                        onChange={(e) => setInputRutCaja(formatearRut(e.target.value))}
+                        onChange={(e) => setInputRutCaja(formatearRutEnVivo(e.target.value))}
                         onKeyDown={(e) => e.key === 'Enter' && buscarClienteEnCaja(inputRutCaja)}
                         className="flex-1 bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
                       />
@@ -772,7 +857,7 @@ export default function App() {
                   </p>
                 )}
 
-                {/* Ficha del cliente cargado en caja (SOLO RUT Y NOMBRE) */}
+                {/* Cliente identificado en caja */}
                 {clienteCaja ? (
                   <div className="space-y-4">
                     <div className="bg-[#241D19] border border-[#4A3B32] rounded-2xl p-4 space-y-2.5 shadow-sm">
@@ -795,7 +880,9 @@ export default function App() {
 
                       <div className="pt-2 border-t border-[#332822]">
                         <span className="text-[#8C7E75] block text-[10px] uppercase font-semibold">RUT del Titular</span>
-                        <span className="font-mono text-[#D99B52] text-sm font-bold">{clienteCaja.rut}</span>
+                        <span className="font-mono text-[#D99B52] text-sm font-bold">
+                          {formatearRutEnVivo(clienteCaja.rut)}
+                        </span>
                       </div>
 
                       <div className="flex justify-between items-center pt-2 border-t border-[#332822] text-xs">
@@ -804,7 +891,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Botones de acción */}
+                    {/* Botones de acreditación y canje */}
                     <div className="space-y-2.5">
                       <button
                         onClick={sumarSelloCaja}
