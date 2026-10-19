@@ -3,8 +3,8 @@ import { Coffee, Award, Sparkles, Check, Smartphone, Store, Plus, RefreshCw, Sta
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from './supabaseClient';
 
-// PIN de acceso a la caja (puedes cambiarlo aquí)
-const PIN_CAJA_CORRECTO = "1234";
+// Clave de acceso a la caja actualizada
+const PIN_CAJA_CORRECTO = "Brunde1865";
 
 // --- FORMATEADOR DE RUT CHILENO ---
 const formatearRut = (valor) => {
@@ -135,7 +135,7 @@ export default function App() {
     };
   }, [cliente.id, cliente.rut]);
 
-  // Validar PIN de caja
+  // Validar clave de caja
   const handleVerificarPin = (e) => {
     e.preventDefault();
     if (pinIngresado === PIN_CAJA_CORRECTO) {
@@ -143,7 +143,7 @@ export default function App() {
       setErrorPin("");
       setPinIngresado("");
     } else {
-      setErrorPin("PIN incorrecto. Intenta de nuevo.");
+      setErrorPin("Contraseña incorrecta. Intenta de nuevo.");
       setPinIngresado("");
     }
   };
@@ -528,7 +528,7 @@ export default function App() {
         {vista === 'caja' && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-6">
             
-            {/* Si NO está autenticado, pide el PIN */}
+            {/* Si NO está autenticado, pide la contraseña */}
             {!cajaAutenticada ? (
               <form onSubmit={handleVerificarPin} className="space-y-5 text-center">
                 <div className="mx-auto w-14 h-14 rounded-2xl bg-[#261E1A] border border-[#4A3B32] flex items-center justify-center text-[#D99B52] shadow-inner mb-2">
@@ -536,18 +536,17 @@ export default function App() {
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-[#F5EDE2]">Acceso Restringido</h2>
-                  <p className="text-xs text-[#A89A90] mt-1">Ingresa el PIN de barra para operar la caja</p>
+                  <p className="text-xs text-[#A89A90] mt-1">Ingresa la clave de barra para operar la caja</p>
                 </div>
 
                 <div>
                   <input
                     type="password"
-                    maxLength={4}
                     autoFocus
-                    placeholder="••••"
+                    placeholder="Contraseña"
                     value={pinIngresado}
                     onChange={(e) => setPinIngresado(e.target.value)}
-                    className="w-36 mx-auto text-center tracking-[0.5em] text-2xl font-mono bg-[#14100E] border border-[#3E3029] rounded-2xl py-3 text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
+                    className="w-full text-center tracking-wider text-lg font-mono bg-[#14100E] border border-[#3E3029] rounded-2xl py-3 px-4 text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
                   />
                   {errorPin && (
                     <p className="text-xs text-[#E57373] font-medium mt-2">{errorPin}</p>
@@ -563,7 +562,7 @@ export default function App() {
                 </button>
               </form>
             ) : (
-              /* Si YA está autenticado, muestra la terminal completa */
+              /* Terminal desbloqueada */
               <div className="space-y-6">
                 <div className="border-b border-[#332822] pb-3 flex justify-between items-center">
                   <div>
