@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Coffee, Award, Sparkles, Check, Smartphone, Store, Plus, 
   RefreshCw, Star, QrCode, Search, UserCheck, ArrowRight, 
-  Lock, KeyRound, LogOut, Camera, X, LogIn, UserPlus
+  Lock, KeyRound, LogOut, Camera, X, LogIn
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -12,77 +12,47 @@ const PIN_CAJA_CORRECTO = "Brunde1865";
 const META_SELLOS = 8;
 const PREMIO_TEXTO = "Café de Especialidad o Postre a elección";
 
-// =========================================================================
-// UTILIDADES DE RUT CHILENO (FORMATO Y VALIDACIÓN OFICIAL MÓDULO 11)
-// =========================================================================
-
-// Limpia el RUT dejando solo dígitos y K mayúscula
+// Limpia el RUT dejando solo dígitos y K
 const limpiarRut = (valor) => {
   if (!valor) return '';
   return valor.toString().replace(/[^0-9kK]/g, '').toUpperCase();
 };
 
-// Formatea en tiempo real mientras el usuario escribe o pega
+// Formatea en tiempo real automáticamente con puntos y guion
 const formatearRutEnVivo = (valor) => {
   const limpio = limpiarRut(valor);
   if (!limpio) return '';
   
-  // Limitar a 9 caracteres (ej: 22.232.223-4 o 9.123.456-7)
   const recortado = limpio.slice(0, 9);
   if (recortado.length === 1) return recortado;
 
   const cuerpo = recortado.slice(0, -1);
   const dv = recortado.slice(-1);
 
-  // Inserción de puntos de miles
   const cuerpoConPuntos = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `${cuerpoConPuntos}-${dv}`;
 };
 
-// Validación flexible: solo exige que tenga cuerpo y guion con su dígito verificador
+// Validación flexible: solo exige que tenga al menos 7 dígitos (ej: 1.234.567-8 hasta 99.999.999-K)
 const validarRutChileno = (rutFormateado) => {
   const limpio = limpiarRut(rutFormateado);
-  // Permite cualquier RUT entre 7 y 9 caracteres (desde 1 millón hasta 99 millones)
   return limpio.length >= 7 && limpio.length <= 9;
 };
 
-  const cuerpo = limpio.slice(0, -1);
-  const dv = limpio.slice(-1);
-
-  let suma = 0;
-  let multiplo = 2;
-
-  for (let i = cuerpo.length - 1; i >= 0; i--) {
-    suma += parseInt(cuerpo.charAt(i), 10) * multiplo;
-    multiplo = multiplo < 7 ? multiplo + 1 : 2;
-  }
-
-  const resto = 11 - (suma % 11);
-  let dvEsperado = '';
-  if (resto === 11) dvEsperado = '0';
-  else if (resto === 10) dvEsperado = 'K';
-  else dvEsperado = resto.toString();
-
-  return dv === dvEsperado;
-
 export default function App() {
-  const [vista, setVista] = useState('cliente'); // 'cliente' | 'consulta_rut' | 'registro' | 'caja'
+  const [vista, setVista] = useState('cliente');
   const [mostrarQR, setMostrarQR] = useState(false);
 
-  // 1. Cliente activo
   const [clienteActual, setClienteActual] = useState(null);
 
-  // 2. Consulta de cliente por RUT
   const [inputRutCliente, setInputRutCliente] = useState("");
   const [mensajeConsultaCliente, setMensajeConsultaCliente] = useState("");
   const [cargandoConsultaCliente, setCargandoConsultaCliente] = useState(false);
 
-  // 3. Registro nuevo cliente
   const [formRegistro, setFormRegistro] = useState({ nombre: "", rut: "" });
   const [mensajeRegistro, setMensajeRegistro] = useState("");
   const [cargandoRegistro, setCargandoRegistro] = useState(false);
 
-  // 4. Terminal de Caja
   const [cajaAutenticada, setCajaAutenticada] = useState(false);
   const [pinIngresado, setPinIngresado] = useState("");
   const [errorPin, setErrorPin] = useState("");
@@ -93,9 +63,6 @@ export default function App() {
   const [escaneandoQR, setEscaneandoQR] = useState(false);
   const scannerRef = useRef(null);
 
-  // =========================================================================
-  // GESTIÓN DE SESIÓN LOCAL
-  // =========================================================================
   useEffect(() => {
     const sesionId = localStorage.getItem('brundeis_cliente_id');
     if (sesionId) {
@@ -128,7 +95,6 @@ export default function App() {
     }
   };
 
-  // Suscripción Realtime para la tarjeta activa
   useEffect(() => {
     if (!clienteActual?.id) return;
 
@@ -162,9 +128,6 @@ export default function App() {
     setVista('consulta_rut');
   };
 
-  // =========================================================================
-  // 1. CONSULTA DE CLIENTE POR RUT (PANTALLA CLIENTE)
-  // =========================================================================
   const consultarTarjetaCliente = async (e) => {
     e.preventDefault();
     setMensajeConsultaCliente("");
@@ -173,14 +136,13 @@ export default function App() {
     const rutLimpio = limpiarRut(rutFormateado);
 
     if (!validarRutChileno(rutFormateado)) {
-      setMensajeConsultaCliente("El RUT ingresado no es válido.");
+      setMensajeConsultaCliente("Ingresa un RUT válido (mínimo 7 números).");
       return;
     }
 
     setCargandoConsultaCliente(true);
 
     try {
-      // Búsqueda flexible: encuentra el RUT formateado o limpio en la BD
       const { data, error } = await supabase
         .from('clientes')
         .select('*')
@@ -189,7 +151,7 @@ export default function App() {
         .maybeSingle();
 
       if (error || !data) {
-        setMensajeConsultaCliente("No se encontró ninguna tarjeta asociada a este RUT.");
+        setMensajeConsultaCliente("No se encontró ninguna tarjeta con este RUT.");
       } else {
         localStorage.setItem('brundeis_cliente_id', data.id);
         setClienteActual(data);
@@ -197,15 +159,12 @@ export default function App() {
         setVista('cliente');
       }
     } catch {
-      setMensajeConsultaCliente("Error de conexión al consultar la tarjeta.");
+      setMensajeConsultaCliente("Error de conexión al consultar.");
     } finally {
       setCargandoConsultaCliente(false);
     }
   };
 
-  // =========================================================================
-  // 2. REGISTRO DE NUEVO CLIENTE
-  // =========================================================================
   const registrarNuevoCliente = async (e) => {
     e.preventDefault();
     setMensajeRegistro("");
@@ -217,7 +176,7 @@ export default function App() {
 
     const rutFormateado = formRegistro.rut.trim();
     if (!validarRutChileno(rutFormateado)) {
-      setMensajeRegistro("El RUT ingresado no es válido.");
+      setMensajeRegistro("El RUT debe tener al menos 7 dígitos.");
       return;
     }
 
@@ -230,7 +189,7 @@ export default function App() {
           {
             nombre: formRegistro.nombre.trim(),
             rut: rutFormateado,
-            sellos: 1, // Sello de bienvenida automático
+            sellos: 1, // Sello de bienvenida
             tarjetas_completadas: 0,
           },
         ])
@@ -239,9 +198,9 @@ export default function App() {
 
       if (error) {
         if (error.code === '23505') {
-          setMensajeRegistro("Este RUT ya se encuentra registrado. Ingresa directamente.");
+          setMensajeRegistro("Este RUT ya está registrado. Consulta directamente con tu RUT.");
         } else {
-          setMensajeRegistro("Error al crear la tarjeta. Intenta nuevamente.");
+          setMensajeRegistro(`Error de base de datos: ${error.message || 'Intenta nuevamente'}`);
         }
       } else if (data) {
         localStorage.setItem('brundeis_cliente_id', data.id);
@@ -249,16 +208,13 @@ export default function App() {
         setFormRegistro({ nombre: "", rut: "" });
         setVista('cliente');
       }
-    } catch {
+    } catch (err) {
       setMensajeRegistro("Error al conectar con la base de datos.");
     } finally {
       setCargandoRegistro(false);
     }
   };
 
-  // =========================================================================
-  // 3. CAJA / TERMINAL DE BARRA (BÚSQUEDA EXCLUSIVA POR RUT Y QR)
-  // =========================================================================
   const handleVerificarPin = (e) => {
     e.preventDefault();
     if (pinIngresado === PIN_CAJA_CORRECTO) {
@@ -281,23 +237,14 @@ export default function App() {
       let data = null;
       let error = null;
 
-      // Si viene por escaneo QR
       if (limpio.startsWith('BRUNDEIS:')) {
         const idCliente = limpio.replace('BRUNDEIS:', '');
         const res = await supabase.from('clientes').select('*').eq('id', idCliente).maybeSingle();
         data = res.data;
         error = res.error;
       } else {
-        // Búsqueda manual por RUT
         const rutFormateado = formatearRutEnVivo(limpio);
         const rutLimpio = limpiarRut(limpio);
-
-        if (!validarRutChileno(rutFormateado)) {
-          setClienteCaja(null);
-          setMensajeCaja({ texto: "El RUT ingresado no es válido.", tipo: "error" });
-          setCargandoCaja(false);
-          return;
-        }
 
         const res = await supabase
           .from('clientes')
@@ -312,7 +259,7 @@ export default function App() {
 
       if (error || !data) {
         setClienteCaja(null);
-        setMensajeCaja({ texto: "No se encontró ningún cliente registrado con este RUT.", tipo: "error" });
+        setMensajeCaja({ texto: "No se encontró ningún cliente con este RUT.", tipo: "error" });
       } else {
         setClienteCaja(data);
         setMensajeCaja({ texto: "Cliente identificado correctamente.", tipo: "exito" });
@@ -325,7 +272,6 @@ export default function App() {
     }
   };
 
-  // Escáner de cámara en caja
   const iniciarEscanerCamara = () => {
     setEscaneandoQR(true);
     setMensajeCaja({ texto: "", tipo: "" });
@@ -344,7 +290,7 @@ export default function App() {
           },
           () => {}
         ).catch(() => {
-          setMensajeCaja({ texto: "No se pudo acceder a la cámara del dispositivo.", tipo: "error" });
+          setMensajeCaja({ texto: "No se pudo acceder a la cámara.", tipo: "error" });
           setEscaneandoQR(false);
         });
       } catch {
@@ -425,17 +371,15 @@ export default function App() {
   return (
     <div className="relative min-h-screen bg-[#0E0B09] text-[#F5EDE2] flex flex-col items-center justify-start p-4 font-sans select-none overflow-x-hidden">
       
-      {/* Fondo visual */}
       <div 
         className="fixed inset-0 z-0 bg-cover bg-center filter blur-[1px] opacity-85 brightness-95 pointer-events-none"
         style={{ backgroundImage: "url('/fondo.JPG')" }}
       />
       <div className="fixed inset-0 z-0 bg-black/50 pointer-events-none" />
 
-      {/* Contenedor principal */}
       <div className="relative z-10 w-full flex flex-col items-center">
         
-        {/* Selector de Navegación Superior */}
+        {/* Navegación superior */}
         <div className="flex bg-[#1E1815]/95 backdrop-blur-md border border-[#4A3B32] p-1.5 rounded-2xl mb-6 shadow-2xl">
           <button
             onClick={() => setVista(clienteActual ? 'cliente' : 'consulta_rut')}
@@ -465,9 +409,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* ================================================================= */}
-        {/* 1. CONSULTA DIRECTA DE TARJETA POR RUT (CLIENTE)                 */}
-        {/* ================================================================= */}
+        {/* 1. Consulta directa por RUT */}
         {vista === 'consulta_rut' && !clienteActual && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
             <div className="border-b border-[#332822] pb-3 text-center">
@@ -525,9 +467,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ================================================================= */}
-        {/* 2. REGISTRO DE NUEVO CLIENTE                                      */}
-        {/* ================================================================= */}
+        {/* 2. Registro de nuevo cliente */}
         {vista === 'registro' && !clienteActual && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
             <div className="border-b border-[#332822] pb-3 text-center">
@@ -547,7 +487,7 @@ export default function App() {
                 </label>
                 <input
                   type="text"
-                  placeholder="Ej: Constanza Morales"
+                  placeholder="Ej: Rosa Castillo"
                   required
                   value={formRegistro.nombre}
                   onChange={(e) => setFormRegistro({ ...formRegistro, nombre: e.target.value })}
@@ -598,9 +538,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ================================================================= */}
-        {/* 3. VISUALIZACIÓN DE TARJETA DE FIDELIZACIÓN                       */}
-        {/* ================================================================= */}
+        {/* 3. Tarjeta de fidelización */}
         {vista === 'cliente' && clienteActual && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-6 relative overflow-hidden">
             <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#C98A42]/20 rounded-full blur-3xl pointer-events-none" />
@@ -622,7 +560,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Datos Personales */}
             <div className="flex justify-between items-center bg-[#241D19]/90 border border-[#3E3029] rounded-2xl p-3.5 px-4 shadow-sm">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-[#A89A90] font-semibold">Titular</p>
@@ -640,7 +577,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* QR Dinámico */}
             {mostrarQR && (
               <div className="bg-[#14100E] border border-[#4A3B32] rounded-2xl p-5 flex flex-col items-center text-center space-y-3 shadow-inner">
                 <p className="text-xs text-[#A89A90]">Muestra este código en la barra para que el cajero lo escanee:</p>
@@ -659,7 +595,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Grilla de Sellos */}
             <div className="bg-[#14100E]/95 border border-[#382B24] rounded-2xl p-5 shadow-inner">
               <div className="grid grid-cols-4 gap-3 place-items-center">
                 {Array.from({ length: META_SELLOS }).map((_, index) => {
@@ -711,7 +646,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Recompensa */}
             <div className="bg-[#241D19]/90 border border-[#4A3B32] rounded-2xl p-4 flex items-start gap-3.5 shadow-md">
               <div className="p-2.5 bg-[#C98A42]/20 border border-[#C98A42]/40 rounded-xl text-[#D99B52] mt-0.5">
                 <Award className="w-5 h-5 stroke-[2]" />
@@ -739,9 +673,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ================================================================= */}
-        {/* 4. TERMINAL DE CAJA (BÚSQUEDA EXCLUSIVA POR RUT Y QR)             */}
-        {/* ================================================================= */}
+        {/* 4. Terminal de caja */}
         {vista === 'caja' && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-6">
             
@@ -796,7 +728,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Botón Escáner Cámara */}
                 {!clienteCaja && !escaneandoQR && (
                   <button
                     onClick={iniciarEscanerCamara}
@@ -822,7 +753,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Búsqueda manual por RUT con autoformato en tiempo real */}
                 {!clienteCaja && (
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
@@ -858,7 +788,6 @@ export default function App() {
                   </p>
                 )}
 
-                {/* Cliente identificado en caja */}
                 {clienteCaja ? (
                   <div className="space-y-4">
                     <div className="bg-[#241D19] border border-[#4A3B32] rounded-2xl p-4 space-y-2.5 shadow-sm">
@@ -892,7 +821,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Botones de acreditación y canje */}
                     <div className="space-y-2.5">
                       <button
                         onClick={sumarSelloCaja}
