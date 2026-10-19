@@ -39,10 +39,12 @@ const formatearRutEnVivo = (valor) => {
   return `${cuerpoConPuntos}-${dv}`;
 };
 
-// Validación matemática oficial de RUT chileno
+// Validación flexible: solo exige que tenga cuerpo y guion con su dígito verificador
 const validarRutChileno = (rutFormateado) => {
   const limpio = limpiarRut(rutFormateado);
-  if (limpio.length < 7 || limpio.length > 9) return false;
+  // Permite cualquier RUT entre 7 y 9 caracteres (desde 1 millón hasta 99 millones)
+  return limpio.length >= 7 && limpio.length <= 9;
+};
 
   const cuerpo = limpio.slice(0, -1);
   const dv = limpio.slice(-1);
@@ -62,7 +64,6 @@ const validarRutChileno = (rutFormateado) => {
   else dvEsperado = resto.toString();
 
   return dv === dvEsperado;
-};
 
 export default function App() {
   const [vista, setVista] = useState('cliente'); // 'cliente' | 'consulta_rut' | 'registro' | 'caja'
