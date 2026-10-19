@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Coffee, Award, Sparkles, Check, Smartphone, Store, Plus, 
-  RefreshCw, Star, QrCode, Search, UserCheck, UserPlus, ArrowRight, 
-  Lock, KeyRound, LogOut, Camera, X, LogIn, User
+  RefreshCw, Star, QrCode, Search, UserCheck, ArrowRight, 
+  Lock, KeyRound, LogOut, Camera, X, LogIn
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -12,75 +12,60 @@ const PIN_CAJA_CORRECTO = "Brunde1865";
 const META_SELLOS = 8;
 const PREMIO_TEXTO = "Café de Especialidad o Postre a elección";
 
-// --- UTILIDADES DE FORMATO ---
+// --- FORMATEADOR AUTOMÁTICO DE RUT CHILENO ---
 const formatearRut = (valor) => {
   if (!valor) return '';
   const limpio = valor.replace(/[^0-9kK]/g, '').toUpperCase();
   if (limpio.length === 0) return '';
   if (limpio.length === 1) return limpio;
+
   const cuerpo = limpio.slice(0, -1);
   const dv = limpio.slice(-1);
   const cuerpoFormateado = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `${cuerpoFormateado}-${dv}`;
 };
 
-const formatearCelular = (valor) => {
-  if (!valor) return '';
-  let soloNumeros = valor.replace(/\D/g, '');
-  if (soloNumeros.startsWith('569')) soloNumeros = soloNumeros.slice(3);
-  else if (soloNumeros.startsWith('56')) soloNumeros = soloNumeros.slice(2);
-  else if (soloNumeros.startsWith('9') && soloNumeros.length > 8) soloNumeros = soloNumeros.slice(1);
-
-  const digitos = soloNumeros.slice(0, 8);
-  if (digitos.length === 0) return '';
-  if (digitos.length <= 4) return `+56 9 ${digitos}`;
-  return `+56 9 ${digitos.slice(0, 4)} ${digitos.slice(4)}`;
-};
-
 export default function App() {
   const [vista, setVista] = useState('cliente'); // 'cliente' | 'registro' | 'login' | 'caja'
   const [mostrarQR, setMostrarQR] = useState(false);
 
-  // 1. SESIÓN INDIVIDUAL DEL CLIENTE (Inicia en null)
+  // 1. Sesión del cliente
   const [clienteActual, setClienteActual] = useState(null);
-  const [cargandoSesion, setCargandoSesion] = useState(true);
 
-  // 2. ESTADOS DE CAJA (Independientes, inicia vacía)
+  // 2. Terminal de Caja (Búsqueda exclusiva por RUT)
   const [cajaAutenticada, setCajaAutenticada] = useState(false);
   const [pinIngresado, setPinIngresado] = useState("");
   const [errorPin, setErrorPin] = useState("");
-  const [clienteCaja, setClienteCaja] = useState(null); // Vacío por defecto
-  const [inputBusquedaCaja, setInputBusquedaCaja] = useState("");
+  const [clienteCaja, setClienteCaja] = useState(null);
+  const [inputRutCaja, setInputRutCaja] = useState("");
   const [cargandoCaja, setCargandoCaja] = useState(false);
   const [mensajeCaja, setMensajeCaja] = useState({ texto: "", tipo: "" });
   const [escaneandoQR, setEscaneandoQR] = useState(false);
   const scannerRef = useRef(null);
 
-  // 3. FORMULARIOS DE REGISTRO E INICIO DE SESIÓN
-  const [formRegistro, setFormRegistro] = useState({ nombre: "", rut: "", telefono: "" });
+  // 3. Formularios
+  const [formRegistro, setFormRegistro] = useState({ nombre: "", rut: "" });
   const [mensajeRegistro, setMensajeRegistro] = useState("");
   const [cargandoRegistro, setCargandoRegistro] = useState(false);
 
-  const [inputLogin, setInputLogin] = useState("");
+  const [inputLoginRut, setInputLoginRut] = useState("");
   const [mensajeLogin, setMensajeLogin] = useState("");
   const [cargandoLogin, setCargandoLogin] = useState(false);
 
   // =========================================================================
-  // GESTIÓN DE SESIÓN DEL CLIENTE (localStorage)
+  // GESTIÓN DE SESIÓN LOCAL
   // =========================================================================
   useEffect(() => {
     const sesionId = localStorage.getItem('brundeis_cliente_id');
     if (sesionId) {
       cargarClientePorId(sesionId);
     } else {
-      setCargandoSesion(false);
-      setVista('registro'); // Si es nuevo visitante, directo al registro
+      setVista('registro');
     }
   }, []);
 
   const cargarClientePorId = async (id) => {
     try {
-      setCargandoSesion(true);
       const { data, error } = await supabase
         .from('clientes')
         .select('*')
@@ -99,12 +84,10 @@ export default function App() {
       localStorage.removeItem('brundeis_cliente_id');
       setClienteActual(null);
       setVista('registro');
-    } finally {
-      setCargandoSesion(false);
     }
   };
 
-  // Suscripción Realtime solo para el cliente autenticado
+  // Suscripción en tiempo real
   useEffect(() => {
     if (!clienteActual?.id) return;
 
@@ -131,7 +114,6 @@ export default function App() {
     };
   }, [clienteActual?.id]);
 
-  // Cerrar sesión en el dispositivo cliente
   const cerrarSesionCliente = () => {
     localStorage.removeItem('brundeis_cliente_id');
     setClienteActual(null);
@@ -139,7 +121,7 @@ export default function App() {
   };
 
   // =========================================================================
-  // ACCIONES DE REGISTRO E INICIO DE SESIÓN
+  // REGISTRO E INICIO DE SESIÓN
   // =========================================================================
   const registrarNuevoCliente = async (e) => {
     e.preventDefault();
@@ -147,8 +129,8 @@ export default function App() {
       setMensajeRegistro("Ingresa tu nombre completo.");
       return;
     }
-    if (!formRegistro.rut.trim() && !formRegistro.telefono.trim()) {
-      setMensajeRegistro("Ingresa al menos tu RUT o número de celular.");
+    if (!formRegistro.rut.trim()) {
+      setMensajeRegistro("Ingresa un RUT válido.");
       return;
     }
 
@@ -161,9 +143,8 @@ export default function App() {
         .insert([
           {
             nombre: formRegistro.nombre.trim(),
-            rut: formRegistro.rut.trim() || null,
-            telefono: formRegistro.telefono.trim() || null,
-            sellos: 1, // 1er sello de bienvenida automático
+            rut: formRegistro.rut.trim(),
+            sellos: 1, // Sello de bienvenida
             tarjetas_completadas: 0,
           },
         ])
@@ -172,14 +153,14 @@ export default function App() {
 
       if (error) {
         if (error.code === '23505') {
-          setMensajeRegistro("Este RUT o teléfono ya tiene una tarjeta. Inicia sesión abajo.");
+          setMensajeRegistro("Este RUT ya está registrado. Inicia sesión abajo.");
         } else {
-          setMensajeRegistro("No se pudo crear la tarjeta. Revisa los datos ingresados.");
+          setMensajeRegistro("Error al registrar la tarjeta. Intenta nuevamente.");
         }
       } else if (data) {
         localStorage.setItem('brundeis_cliente_id', data.id);
         setClienteActual(data);
-        setFormRegistro({ nombre: "", rut: "", telefono: "" });
+        setFormRegistro({ nombre: "", rut: "" });
         setVista('cliente');
       }
     } catch {
@@ -191,26 +172,26 @@ export default function App() {
 
   const iniciarSesionCliente = async (e) => {
     e.preventDefault();
-    if (!inputLogin.trim()) return;
+    if (!inputLoginRut.trim()) return;
 
     setCargandoLogin(true);
     setMensajeLogin("");
 
     try {
-      const criterio = inputLogin.trim();
+      const rutBuscado = inputLoginRut.trim();
       const { data, error } = await supabase
         .from('clientes')
         .select('*')
-        .or(`rut.ilike.%${criterio}%,telefono.ilike.%${criterio}%`)
+        .ilike('rut', rutBuscado)
         .limit(1)
         .maybeSingle();
 
       if (error || !data) {
-        setMensajeLogin("No encontramos ninguna tarjeta con ese RUT o teléfono.");
+        setMensajeLogin("No encontramos ninguna tarjeta con ese RUT.");
       } else {
         localStorage.setItem('brundeis_cliente_id', data.id);
         setClienteActual(data);
-        setInputLogin("");
+        setInputLoginRut("");
         setVista('cliente');
       }
     } catch {
@@ -221,7 +202,7 @@ export default function App() {
   };
 
   // =========================================================================
-  // CAJA / TERMINAL DE BARRA
+  // CAJA / TERMINAL DE BARRA (SOLO RUT)
   // =========================================================================
   const handleVerificarPin = (e) => {
     e.preventDefault();
@@ -244,23 +225,24 @@ export default function App() {
       const limpio = termino.trim();
       let query = supabase.from('clientes').select('*');
 
-      // Si viene con prefijo BRUNDEIS: (desde el QR)
+      // Si viene desde el escaneo QR con prefijo
       if (limpio.startsWith('BRUNDEIS:')) {
         const idCliente = limpio.replace('BRUNDEIS:', '');
         query = query.eq('id', idCliente);
       } else {
-        query = query.or(`rut.ilike.%${limpio}%,telefono.ilike.%${limpio}%`);
+        // Búsqueda manual únicamente por RUT
+        query = query.ilike('rut', limpio);
       }
 
       const { data, error } = await query.limit(1).maybeSingle();
 
       if (error || !data) {
         setClienteCaja(null);
-        setMensajeCaja({ texto: "Cliente no registrado o código QR no válido.", tipo: "error" });
+        setMensajeCaja({ texto: "Cliente no registrado o RUT incorrecto.", tipo: "error" });
       } else {
         setClienteCaja(data);
         setMensajeCaja({ texto: "Cliente identificado exitosamente.", tipo: "exito" });
-        setInputBusquedaCaja("");
+        setInputRutCaja("");
       }
     } catch {
       setMensajeCaja({ texto: "Error al consultar la base de datos.", tipo: "error" });
@@ -269,7 +251,7 @@ export default function App() {
     }
   };
 
-  // Control de escaneo por cámara en caja
+  // Escáner de cámara
   const iniciarEscanerCamara = () => {
     setEscaneandoQR(true);
     setMensajeCaja({ texto: "", tipo: "" });
@@ -286,9 +268,9 @@ export default function App() {
             detenerEscanerCamara();
             buscarClienteEnCaja(decodedText);
           },
-          () => {} // Ignorar errores por frame
+          () => {}
         ).catch(() => {
-          setMensajeCaja({ texto: "No se pudo acceder a la cámara del dispositivo.", tipo: "error" });
+          setMensajeCaja({ texto: "No se pudo acceder a la cámara.", tipo: "error" });
           setEscaneandoQR(false);
         });
       } catch {
@@ -338,7 +320,7 @@ export default function App() {
       const { error } = await supabase
         .from('clientes')
         .update({
-          sellos: 1, // Reinicia con sello de cortesía
+          sellos: 1,
           tarjetas_completadas: nuevasCompletadas,
           updated_at: new Date()
         })
@@ -361,14 +343,11 @@ export default function App() {
 
   const limpiarClienteCaja = () => {
     setClienteCaja(null);
-    setInputBusquedaCaja("");
+    setInputRutCaja("");
     setMensajeCaja({ texto: "", tipo: "" });
     if (escaneandoQR) detenerEscanerCamara();
   };
 
-  // =========================================================================
-  // RENDERIZADO
-  // =========================================================================
   return (
     <div className="relative min-h-screen bg-[#0E0B09] text-[#F5EDE2] flex flex-col items-center justify-start p-4 font-sans select-none overflow-x-hidden">
       
@@ -412,14 +391,11 @@ export default function App() {
           </button>
         </div>
 
-        {/* ================================================================= */}
-        {/* VISTA 1: TARJETA DEL CLIENTE AUTENTICADO                          */}
-        {/* ================================================================= */}
+        {/* ================= VISTA CLIENTE ================= */}
         {vista === 'cliente' && clienteActual && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-6 relative overflow-hidden">
             <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#C98A42]/20 rounded-full blur-3xl pointer-events-none" />
 
-            {/* Cabecera */}
             <div className="flex items-center justify-between border-b border-[#332822] pb-4">
               <div>
                 <span className="text-[10px] font-bold tracking-[0.2em] text-[#D99B52] uppercase">
@@ -437,15 +413,13 @@ export default function App() {
               </div>
             </div>
 
-            {/* Datos Personales del Cliente */}
             <div className="flex justify-between items-center bg-[#241D19]/90 border border-[#3E3029] rounded-2xl p-3.5 px-4 shadow-sm">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-[#A89A90] font-semibold">Titular</p>
                 <p className="text-base font-bold text-[#F5EDE2]">{clienteActual.nombre}</p>
-                <div className="flex flex-col text-[11px] font-mono mt-0.5 space-y-0.5">
-                  {clienteActual.rut && <span className="text-[#D99B52]">RUT: {clienteActual.rut}</span>}
-                  {clienteActual.telefono && <span className="text-[#A89A90] text-[10px]">{clienteActual.telefono}</span>}
-                </div>
+                <span className="text-[11px] font-mono text-[#D99B52] mt-0.5 block">
+                  RUT: {clienteActual.rut}
+                </span>
               </div>
               <button
                 onClick={() => setMostrarQR(!mostrarQR)}
@@ -456,7 +430,6 @@ export default function App() {
               </button>
             </div>
 
-            {/* Despliegue de Código QR Seguro con identificador único */}
             {mostrarQR && (
               <div className="bg-[#14100E] border border-[#4A3B32] rounded-2xl p-5 flex flex-col items-center text-center space-y-3 shadow-inner">
                 <p className="text-xs text-[#A89A90]">Muestra este código en la barra para que el cajero lo escanee:</p>
@@ -470,12 +443,12 @@ export default function App() {
                   />
                 </div>
                 <div className="text-[11px] font-mono text-[#D99B52]">
-                  {clienteActual.rut ? `RUT: ${clienteActual.rut}` : clienteActual.nombre}
+                  RUT: {clienteActual.rut}
                 </div>
               </div>
             )}
 
-            {/* Grilla de Sellos del Cliente */}
+            {/* Sellos */}
             <div className="bg-[#14100E]/95 border border-[#382B24] rounded-2xl p-5 shadow-inner">
               <div className="grid grid-cols-4 gap-3 place-items-center">
                 {Array.from({ length: META_SELLOS }).map((_, index) => {
@@ -513,7 +486,6 @@ export default function App() {
                 })}
               </div>
 
-              {/* Barra de Progreso */}
               <div className="mt-5 space-y-2">
                 <div className="flex justify-between text-xs font-medium text-[#A89A90]">
                   <span>Progreso de visitas</span>
@@ -528,7 +500,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Recompensa */}
             <div className="bg-[#241D19]/90 border border-[#4A3B32] rounded-2xl p-4 flex items-start gap-3.5 shadow-md">
               <div className="p-2.5 bg-[#C98A42]/20 border border-[#C98A42]/40 rounded-xl text-[#D99B52] mt-0.5">
                 <Award className="w-5 h-5 stroke-[2]" />
@@ -544,7 +515,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Cerrar sesión en el teléfono */}
             <div className="text-center pt-2">
               <button
                 onClick={cerrarSesionCliente}
@@ -557,9 +527,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ================================================================= */}
-        {/* VISTA 2: FORMULARIO DE REGISTRO PARA NUEVOS CLIENTES             */}
-        {/* ================================================================= */}
+        {/* ================= VISTA REGISTRO ================= */}
         {vista === 'registro' && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
             <div className="border-b border-[#332822] pb-3 text-center">
@@ -575,7 +543,7 @@ export default function App() {
             <form onSubmit={registrarNuevoCliente} className="space-y-4">
               <div>
                 <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block mb-1">
-                  Tu Nombre *
+                  Tu Nombre Completo *
                 </label>
                 <input
                   type="text"
@@ -590,33 +558,17 @@ export default function App() {
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider">
-                    RUT
+                    RUT *
                   </label>
-                  <span className="text-[10px] text-[#A89A90]">Automático</span>
+                  <span className="text-[10px] text-[#A89A90]">Automático con puntos y guion</span>
                 </div>
                 <input
                   type="text"
+                  required
                   maxLength={12}
                   placeholder="Ej: 18.234.567-8"
                   value={formRegistro.rut}
                   onChange={(e) => setFormRegistro(prev => ({ ...prev, rut: formatearRut(e.target.value) }))}
-                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider">
-                    Celular
-                  </label>
-                  <span className="text-[10px] text-[#A89A90]">+56 9</span>
-                </div>
-                <input
-                  type="tel"
-                  maxLength={17}
-                  placeholder="+56 9 1234 5678"
-                  value={formRegistro.telefono}
-                  onChange={(e) => setFormRegistro(prev => ({ ...prev, telefono: formatearCelular(e.target.value) }))}
                   className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
                 />
               </div>
@@ -646,9 +598,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ================================================================= */}
-        {/* VISTA 3: INICIO DE SESIÓN PARA CLIENTES EXISTENTES                */}
-        {/* ================================================================= */}
+        {/* ================= VISTA LOGIN (SOLO RUT CON FORMATO) ================= */}
         {vista === 'login' && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
             <div className="border-b border-[#332822] pb-3 text-center">
@@ -657,22 +607,26 @@ export default function App() {
               </span>
               <h2 className="text-xl font-black text-[#F5EDE2] mt-0.5">Ver mi Tarjeta</h2>
               <p className="text-xs text-[#A89A90] mt-1">
-                Ingresa con tu RUT o Celular registrado
+                Ingresa con tu RUT registrado
               </p>
             </div>
 
             <form onSubmit={iniciarSesionCliente} className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block mb-1">
-                  RUT o Celular
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider">
+                    RUT
+                  </label>
+                  <span className="text-[10px] text-[#A89A90]">Formato automático</span>
+                </div>
                 <input
                   type="text"
-                  placeholder="Ej: 18.234.567-8 ó 912345678"
+                  maxLength={12}
+                  placeholder="Ej: 18.234.567-8"
                   required
-                  value={inputLogin}
-                  onChange={(e) => setInputLogin(e.target.value)}
-                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
+                  value={inputLoginRut}
+                  onChange={(e) => setInputLoginRut(formatearRut(e.target.value))}
+                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
                 />
               </div>
 
@@ -701,13 +655,10 @@ export default function App() {
           </div>
         )}
 
-        {/* ================================================================= */}
-        {/* VISTA 4: TERMINAL DE CAJA (Inicia protegida y limpia)             */}
-        {/* ================================================================= */}
+        {/* ================= VISTA CAJA (SOLO RUT Y QR) ================= */}
         {vista === 'caja' && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-6">
             
-            {/* Si no está autenticada, pide PIN */}
             {!cajaAutenticada ? (
               <form onSubmit={handleVerificarPin} className="space-y-5 text-center">
                 <div className="mx-auto w-14 h-14 rounded-2xl bg-[#261E1A] border border-[#4A3B32] flex items-center justify-center text-[#D99B52] shadow-inner mb-2">
@@ -741,12 +692,11 @@ export default function App() {
                 </button>
               </form>
             ) : (
-              /* Terminal Desbloqueada */
               <div className="space-y-5">
                 <div className="border-b border-[#332822] pb-3 flex justify-between items-center">
                   <div>
                     <h2 className="text-xl font-bold text-[#F5EDE2]">Terminal Barra</h2>
-                    <p className="text-xs text-[#A89A90]">Escanear o buscar cliente</p>
+                    <p className="text-xs text-[#A89A90]">Identificación por RUT o QR</p>
                   </div>
                   <button
                     onClick={() => {
@@ -756,11 +706,11 @@ export default function App() {
                     title="Bloquear caja"
                     className="text-[#A89A90] hover:text-[#E57373] p-1.5 rounded-lg border border-[#3E3029] bg-[#14100E]"
                   >
-                    <LogOut className="w-4 h-4" />
+                    <LogOut className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* BOTÓN Y VISOR DE ESCÁNER DE CÁMARA */}
+                {/* Botón Escáner Cámara */}
                 {!clienteCaja && !escaneandoQR && (
                   <button
                     onClick={iniciarEscanerCamara}
@@ -782,29 +732,32 @@ export default function App() {
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                    {/* Contenedor del escáner */}
                     <div id="reader" className="w-full rounded-xl overflow-hidden bg-black aspect-square" />
                   </div>
                 )}
 
-                {/* BUSCADOR MANUAL POR RUT O TELÉFONO */}
+                {/* Búsqueda manual SOLO por RUT con formato automático */}
                 {!clienteCaja && (
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block">
-                      O buscar manualmente
-                    </label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block">
+                        RUT del Cliente
+                      </label>
+                      <span className="text-[10px] text-[#A89A90]">Autoformato</span>
+                    </div>
                     <div className="flex gap-2">
                       <input
                         type="text"
-                        placeholder="RUT o Celular del cliente"
-                        value={inputBusquedaCaja}
-                        onChange={(e) => setInputBusquedaCaja(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && buscarClienteEnCaja(inputBusquedaCaja)}
-                        className="flex-1 bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
+                        maxLength={12}
+                        placeholder="Ej: 18.234.567-8"
+                        value={inputRutCaja}
+                        onChange={(e) => setInputRutCaja(formatearRut(e.target.value))}
+                        onKeyDown={(e) => e.key === 'Enter' && buscarClienteEnCaja(inputRutCaja)}
+                        className="flex-1 bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
                       />
                       <button
-                        onClick={() => buscarClienteEnCaja(inputBusquedaCaja)}
-                        disabled={cargandoCaja || !inputBusquedaCaja}
+                        onClick={() => buscarClienteEnCaja(inputRutCaja)}
+                        disabled={cargandoCaja || !inputRutCaja}
                         className="bg-[#241D19] border border-[#4A3B32] hover:bg-[#2F241F] text-[#D99B52] px-4 rounded-xl flex items-center justify-center transition"
                       >
                         <Search className="w-4 h-4" />
@@ -819,10 +772,10 @@ export default function App() {
                   </p>
                 )}
 
-                {/* CLIENTE IDENTIFICADO EN CAJA */}
+                {/* Ficha del cliente cargado en caja (SOLO RUT Y NOMBRE) */}
                 {clienteCaja ? (
                   <div className="space-y-4">
-                    <div className="bg-[#241D19] border border-[#4A3B32] rounded-2xl p-4 space-y-2.5 shadow-sm relative">
+                    <div className="bg-[#241D19] border border-[#4A3B32] rounded-2xl p-4 space-y-2.5 shadow-sm">
                       <div className="flex justify-between items-start">
                         <div>
                           <span className="text-[10px] text-[#A89A90] uppercase font-bold tracking-wider">Cliente Identificado</span>
@@ -840,24 +793,18 @@ export default function App() {
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-[#332822]">
-                        <div>
-                          <span className="text-[#8C7E75] block text-[10px]">RUT</span>
-                          <span className="font-mono text-[#D99B52]">{clienteCaja.rut || 'No indicado'}</span>
-                        </div>
-                        <div>
-                          <span className="text-[#8C7E75] block text-[10px]">Celular</span>
-                          <span className="font-mono text-[#A89A90]">{clienteCaja.telefono || 'No indicado'}</span>
-                        </div>
+                      <div className="pt-2 border-t border-[#332822]">
+                        <span className="text-[#8C7E75] block text-[10px] uppercase font-semibold">RUT del Titular</span>
+                        <span className="font-mono text-[#D99B52] text-sm font-bold">{clienteCaja.rut}</span>
                       </div>
 
-                      <div className="flex justify-between items-center pt-1 border-t border-[#332822] text-xs">
+                      <div className="flex justify-between items-center pt-2 border-t border-[#332822] text-xs">
                         <span className="text-[#A89A90]">Sellos acumulados:</span>
                         <span className="text-[#D99B52] font-black text-sm">{clienteCaja.sellos} / {META_SELLOS}</span>
                       </div>
                     </div>
 
-                    {/* BOTONES DE ACREDITACIÓN / CANJE */}
+                    {/* Botones de acción */}
                     <div className="space-y-2.5">
                       <button
                         onClick={sumarSelloCaja}
@@ -886,7 +833,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="text-center py-6 text-xs text-[#8C7E75] border border-dashed border-[#382B24] rounded-2xl">
-                    Ningún cliente seleccionado.<br />Escanea un código QR o ingresa su RUT arriba para comenzar.
+                    Ningún cliente seleccionado.<br />Escanea un código QR o ingresa el RUT arriba para comenzar.
                   </div>
                 )}
               </div>
