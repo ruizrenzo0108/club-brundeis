@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Coffee, Award, Sparkles, Check, Smartphone, Store, Plus, 
   RefreshCw, Star, QrCode, Search, UserCheck, ArrowRight, 
-  Lock, KeyRound, LogOut, Camera, X, Phone, Hash
+  Lock, KeyRound, LogOut, Camera, X, Mail, Hash
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -12,17 +12,13 @@ const PIN_CAJA_CORRECTO = "Brunde1865";
 const META_SELLOS = 8;
 const PREMIO_TEXTO = "Café de Especialidad o Postre a elección";
 
-// =========================================================================
-// UTILIDADES DE FORMATO EN TIEMPO REAL
-// =========================================================================
-
-// Limpia el RUT dejando solo números y K
+// Limpia el RUT dejando solo dígitos y K mayúscula
 const limpiarRut = (valor) => {
   if (!valor) return '';
   return valor.toString().replace(/[^0-9kK]/g, '').toUpperCase();
 };
 
-// Formatea en tiempo real: XX.XXX.XXX-X
+// Formatea RUT en tiempo real: XX.XXX.XXX-X
 const formatearRutEnVivo = (valor) => {
   const limpio = limpiarRut(valor);
   if (!limpio) return '';
@@ -35,47 +31,34 @@ const formatearRutEnVivo = (valor) => {
   return `${cuerpoConPuntos}-${dv}`;
 };
 
-// Extrae los 8 dígitos móviles tras el +56 9
-const extraer8DigitosCelular = (valor) => {
-  if (!valor) return '';
-  let soloNumeros = valor.toString().replace(/\D/g, '');
-  if (soloNumeros.startsWith('569')) soloNumeros = soloNumeros.slice(3);
-  else if (soloNumeros.startsWith('56')) soloNumeros = soloNumeros.slice(2);
-  else if (soloNumeros.startsWith('9') && soloNumeros.length > 8) soloNumeros = soloNumeros.slice(1);
-  return soloNumeros.slice(0, 8);
-};
-
-// Formatea celular en tiempo real: XXXX XXXX
-const formatear8DigitosEnVivo = (valor) => {
-  const d = extraer8DigitosCelular(valor);
-  if (!d) return '';
-  if (d.length <= 4) return d;
-  return `${d.slice(0, 4)} ${d.slice(4)}`;
+// Validación simple de correo
+const validarEmail = (correo) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.trim());
 };
 
 export default function App() {
   const [vista, setVista] = useState('cliente'); // 'cliente' | 'consulta' | 'registro' | 'caja'
   const [mostrarQR, setMostrarQR] = useState(false);
 
-  // 1. Sesión del cliente activo
+  // 1. Cliente activo
   const [clienteActual, setClienteActual] = useState(null);
 
-  // 2. Consulta de tarjeta (Una sola ranura)
-  const [metodoConsulta, setMetodoConsulta] = useState('rut'); // 'rut' | 'celular'
+  // 2. Consulta de tarjeta (Cliente)
+  const [metodoConsulta, setMetodoConsulta] = useState('rut'); // 'rut' | 'email'
   const [valorRanuraConsulta, setValorRanuraConsulta] = useState("");
   const [mensajeConsulta, setMensajeConsulta] = useState("");
   const [cargandoConsulta, setCargandoConsulta] = useState(false);
 
   // 3. Formulario de registro (Nuevo cliente)
-  const [formRegistro, setFormRegistro] = useState({ nombre: "", rut: "", celular: "" });
+  const [formRegistro, setFormRegistro] = useState({ nombre: "", rut: "", email: "" });
   const [mensajeRegistro, setMensajeRegistro] = useState("");
   const [cargandoRegistro, setCargandoRegistro] = useState(false);
 
-  // 4. Módulo de Caja (Una sola ranura)
+  // 4. Módulo de Caja
   const [cajaAutenticada, setCajaAutenticada] = useState(false);
   const [pinIngresado, setPinIngresado] = useState("");
   const [errorPin, setErrorPin] = useState("");
-  const [metodoCaja, setMetodoCaja] = useState('rut'); // 'rut' | 'celular'
+  const [metodoCaja, setMetodoCaja] = useState('rut'); // 'rut' | 'email'
   const [valorRanuraCaja, setValorRanuraCaja] = useState("");
   const [clienteCaja, setClienteCaja] = useState(null);
   const [cargandoCaja, setCargandoCaja] = useState(false);
@@ -152,7 +135,7 @@ export default function App() {
   };
 
   // =========================================================================
-  // 1. CONSULTA DE TARJETA (UNA SOLA RANURA ADAPTABLE)
+  // 1. CONSULTA DE TARJETA (UNA SOLA RANURA: RUT O EMAIL)
   // =========================================================================
   const handleCambioMetodoConsulta = (metodo) => {
     setMetodoConsulta(metodo);
@@ -161,11 +144,11 @@ export default function App() {
   };
 
   const handleInputRanuraConsulta = (e) => {
-    const raw = e.target.value;
+    const val = e.target.value;
     if (metodoConsulta === 'rut') {
-      setValorRanuraConsulta(formatearRutEnVivo(raw));
+      setValorRanuraConsulta(formatearRutEnVivo(val));
     } else {
-      setValorRanuraConsulta(formatear8DigitosEnVivo(raw));
+      setValorRanuraConsulta(val.toLowerCase().trim());
     }
   };
 
@@ -173,8 +156,9 @@ export default function App() {
     e.preventDefault();
     setMensajeConsulta("");
 
-    if (!valorRanuraConsulta.trim()) {
-      setMensajeConsulta(`Ingresa un ${metodoConsulta === 'rut' ? 'RUT' : 'número celular'}.`);
+    const valor = valorRanuraConsulta.trim();
+    if (!valor) {
+      setMensajeConsulta(`Ingresa un ${metodoConsulta === 'rut' ? 'RUT' : 'correo electrónico'}.`);
       return;
     }
 
@@ -184,8 +168,8 @@ export default function App() {
       let data = null;
 
       if (metodoConsulta === 'rut') {
-        const rutFormateado = formatearRutEnVivo(valorRanuraConsulta);
-        const rutLimpio = limpiarRut(valorRanuraConsulta);
+        const rutFormateado = formatearRutEnVivo(valor);
+        const rutLimpio = limpiarRut(valor);
 
         const res = await supabase
           .from('clientes')
@@ -195,9 +179,8 @@ export default function App() {
           .maybeSingle();
         data = res.data;
       } else {
-        const cel8 = extraer8DigitosCelular(valorRanuraConsulta);
-        if (cel8.length !== 8) {
-          setMensajeConsulta("El número celular debe tener 8 dígitos.");
+        if (!validarEmail(valor)) {
+          setMensajeConsulta("El formato del correo electrónico no es válido.");
           setCargandoConsulta(false);
           return;
         }
@@ -205,14 +188,14 @@ export default function App() {
         const res = await supabase
           .from('clientes')
           .select('*')
-          .ilike('telefono', `%${cel8}%`)
+          .ilike('email', valor)
           .limit(1)
           .maybeSingle();
         data = res.data;
       }
 
       if (!data) {
-        setMensajeConsulta(`No encontramos ninguna tarjeta con ese ${metodoConsulta === 'rut' ? 'RUT' : 'celular'}.`);
+        setMensajeConsulta(`No se encontró ninguna tarjeta con ese ${metodoConsulta === 'rut' ? 'RUT' : 'correo'}.`);
       } else {
         localStorage.setItem('brundeis_cliente_id', data.id);
         setClienteActual(data);
@@ -220,14 +203,14 @@ export default function App() {
         setVista('cliente');
       }
     } catch {
-      setMensajeConsulta("Error de conexión al consultar la base de datos.");
+      setMensajeConsulta("Error de conexión al consultar.");
     } finally {
       setCargandoConsulta(false);
     }
   };
 
   // =========================================================================
-  // 2. REGISTRO DE NUEVO CLIENTE
+  // 2. REGISTRO DE NUEVO CLIENTE (NOMBRE + RUT + CORREO)
   // =========================================================================
   const registrarNuevoCliente = async (e) => {
     e.preventDefault();
@@ -235,8 +218,7 @@ export default function App() {
 
     const nombre = formRegistro.nombre.trim();
     const rutFormateado = formatearRutEnVivo(formRegistro.rut);
-    const cel8 = extraer8DigitosCelular(formRegistro.celular);
-    const celularGuardado = `+56 9 ${cel8.length > 4 ? `${cel8.slice(0, 4)}${cel8.slice(4)}` : cel8}`;
+    const email = formRegistro.email.toLowerCase().trim();
 
     if (!nombre) {
       setMensajeRegistro("Ingresa tu nombre completo.");
@@ -246,8 +228,8 @@ export default function App() {
       setMensajeRegistro("Ingresa un RUT válido.");
       return;
     }
-    if (cel8.length !== 8) {
-      setMensajeRegistro("Ingresa los 8 dígitos de tu celular (+56 9).");
+    if (!validarEmail(email)) {
+      setMensajeRegistro("Ingresa un correo electrónico válido (ej: nombre@gmail.com).");
       return;
     }
 
@@ -255,15 +237,17 @@ export default function App() {
 
     try {
       const rutLimpio = limpiarRut(rutFormateado);
+
+      // Comprobar si ya existe el RUT o Correo
       const { data: existente } = await supabase
         .from('clientes')
         .select('id')
-        .or(`rut.eq.${rutFormateado},rut.eq.${rutLimpio},telefono.ilike.%${cel8}%`)
+        .or(`rut.eq.${rutFormateado},rut.eq.${rutLimpio},email.ilike.${email}`)
         .limit(1)
         .maybeSingle();
 
       if (existente) {
-        setMensajeRegistro("Este RUT o celular ya tiene una tarjeta. Búscate directamente en la pantalla anterior.");
+        setMensajeRegistro("Este RUT o correo ya está registrado. Consulta tu tarjeta directamente.");
         setCargandoRegistro(false);
         return;
       }
@@ -274,8 +258,8 @@ export default function App() {
           {
             nombre: nombre,
             rut: rutFormateado,
-            telefono: celularGuardado,
-            sellos: 1, // Sello de bienvenida automático
+            email: email,
+            sellos: 1, // Sello de bienvenida
             tarjetas_completadas: 0,
           },
         ])
@@ -283,15 +267,15 @@ export default function App() {
         .single();
 
       if (error) {
-        setMensajeRegistro("Error al registrar en la base de datos.");
+        setMensajeRegistro("Error al guardar en la base de datos.");
       } else if (data) {
         localStorage.setItem('brundeis_cliente_id', data.id);
         setClienteActual(data);
-        setFormRegistro({ nombre: "", rut: "", celular: "" });
+        setFormRegistro({ nombre: "", rut: "", email: "" });
         setVista('cliente');
       }
     } catch {
-      setMensajeRegistro("Error de conexión al guardar.");
+      setMensajeRegistro("Error al conectar con el servidor.");
     } finally {
       setCargandoRegistro(false);
     }
@@ -319,17 +303,18 @@ export default function App() {
   };
 
   const handleInputRanuraCaja = (e) => {
-    const raw = e.target.value;
+    const val = e.target.value;
     if (metodoCaja === 'rut') {
-      setValorRanuraCaja(formatearRutEnVivo(raw));
+      setValorRanuraCaja(formatearRutEnVivo(val));
     } else {
-      setValorRanuraCaja(formatear8DigitosEnVivo(raw));
+      setValorRanuraCaja(val.toLowerCase().trim());
     }
   };
 
   const buscarClienteEnCaja = async (e) => {
     if (e) e.preventDefault();
-    if (!valorRanuraCaja.trim()) return;
+    const valor = valorRanuraCaja.trim();
+    if (!valor) return;
 
     setCargandoCaja(true);
     setMensajeCaja({ texto: "", tipo: "" });
@@ -338,8 +323,8 @@ export default function App() {
       let data = null;
 
       if (metodoCaja === 'rut') {
-        const rutFormateado = formatearRutEnVivo(valorRanuraCaja);
-        const rutLimpio = limpiarRut(valorRanuraCaja);
+        const rutFormateado = formatearRutEnVivo(valor);
+        const rutLimpio = limpiarRut(valor);
 
         const res = await supabase
           .from('clientes')
@@ -349,17 +334,10 @@ export default function App() {
           .maybeSingle();
         data = res.data;
       } else {
-        const cel8 = extraer8DigitosCelular(valorRanuraCaja);
-        if (cel8.length !== 8) {
-          setMensajeCaja({ texto: "Ingresa los 8 dígitos del celular.", tipo: "error" });
-          setCargandoCaja(false);
-          return;
-        }
-
         const res = await supabase
           .from('clientes')
           .select('*')
-          .ilike('telefono', `%${cel8}%`)
+          .ilike('email', valor)
           .limit(1)
           .maybeSingle();
         data = res.data;
@@ -396,7 +374,7 @@ export default function App() {
         const res = await supabase
           .from('clientes')
           .select('*')
-          .or(`rut.ilike.%${limpio}%,telefono.ilike.%${limpio}%`)
+          .or(`rut.ilike.%${limpio}%,email.ilike.%${limpio}%`)
           .limit(1)
           .maybeSingle();
         data = res.data;
@@ -434,7 +412,7 @@ export default function App() {
           },
           () => {}
         ).catch(() => {
-          setMensajeCaja({ texto: "No se pudo acceder a la cámara del dispositivo.", tipo: "error" });
+          setMensajeCaja({ texto: "No se pudo acceder a la cámara.", tipo: "error" });
           setEscaneandoQR(false);
         });
       } catch {
@@ -556,7 +534,7 @@ export default function App() {
         </div>
 
         {/* ================================================================= */}
-        {/* 1. CONSULTA: DOS OPCIONES ARRIBA Y UNA SOLA RANURA DE ENTRADA    */}
+        {/* 1. CONSULTA: DOS OPCIONES (RUT O EMAIL) Y UNA SOLA RANURA        */}
         {/* ================================================================= */}
         {vista === 'consulta' && !clienteActual && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
@@ -566,7 +544,7 @@ export default function App() {
               </span>
               <h2 className="text-xl font-black text-[#F5EDE2] mt-0.5">Consulta tu Tarjeta</h2>
               <p className="text-xs text-[#A89A90] mt-1">
-                Elige el método y escribe en la ranura
+                Elige cómo buscarte y escribe en la casilla
               </p>
             </div>
 
@@ -586,15 +564,15 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => handleCambioMetodoConsulta('celular')}
+                onClick={() => handleCambioMetodoConsulta('email')}
                 className={`py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition ${
-                  metodoConsulta === 'celular'
+                  metodoConsulta === 'email'
                     ? 'bg-[#C98A42] text-[#14100E] font-bold shadow'
                     : 'text-[#A89A90] hover:text-[#F5EDE2]'
                 }`}
               >
-                <Phone className="w-3.5 h-3.5" />
-                Buscar por Celular
+                <Mail className="w-3.5 h-3.5" />
+                Por Correo
               </button>
             </div>
 
@@ -603,32 +581,23 @@ export default function App() {
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider">
-                    {metodoConsulta === 'rut' ? 'RUT del Cliente' : 'Celular (Chile)'}
+                    {metodoConsulta === 'rut' ? 'RUT del Cliente' : 'Correo Electrónico'}
                   </label>
                   <span className="text-[10px] text-[#A89A90]">
-                    {metodoConsulta === 'rut' ? 'Formato automático' : '+56 9 fijo'}
+                    {metodoConsulta === 'rut' ? 'Autoformato' : 'Gmail / Correo'}
                   </span>
                 </div>
 
-                <div className="relative flex items-center">
-                  {metodoConsulta === 'celular' && (
-                    <span className="absolute left-4 text-sm font-mono text-[#D99B52] pointer-events-none">
-                      +56 9
-                    </span>
-                  )}
-                  <input
-                    type={metodoConsulta === 'rut' ? 'text' : 'tel'}
-                    maxLength={metodoConsulta === 'rut' ? 12 : 9}
-                    placeholder={metodoConsulta === 'rut' ? 'Ej: 22.232.223-4' : '1234 5678'}
-                    autoFocus
-                    required
-                    value={valorRanuraConsulta}
-                    onChange={handleInputRanuraConsulta}
-                    className={`w-full bg-[#14100E] border border-[#3E3029] rounded-xl py-3.5 text-base font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider ${
-                      metodoConsulta === 'rut' ? 'px-4 text-center' : 'pl-20 pr-4'
-                    }`}
-                  />
-                </div>
+                <input
+                  type={metodoConsulta === 'rut' ? 'text' : 'email'}
+                  maxLength={metodoConsulta === 'rut' ? 12 : 60}
+                  placeholder={metodoConsulta === 'rut' ? 'Ej: 22.232.223-4' : 'ejemplo@gmail.com'}
+                  autoFocus
+                  required
+                  value={valorRanuraConsulta}
+                  onChange={handleInputRanuraConsulta}
+                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3.5 text-base font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider text-center"
+                />
               </div>
 
               {mensajeConsulta && (
@@ -657,7 +626,7 @@ export default function App() {
         )}
 
         {/* ================================================================= */}
-        {/* 2. REGISTRO NUEVO CLIENTE (NOMBRE + RUT + CELULAR)                */}
+        {/* 2. REGISTRO NUEVO CLIENTE (NOMBRE + RUT + CORREO)                 */}
         {/* ================================================================= */}
         {vista === 'registro' && !clienteActual && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-5">
@@ -705,29 +674,17 @@ export default function App() {
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider">
-                    Celular (Chile) *
-                  </label>
-                  <span className="text-[10px] text-[#A89A90]">+56 9</span>
-                </div>
-                <div className="relative flex items-center">
-                  <span className="absolute left-4 text-sm font-mono text-[#D99B52] pointer-events-none">
-                    +56 9
-                  </span>
-                  <input
-                    type="tel"
-                    required
-                    maxLength={9}
-                    placeholder="1234 5678"
-                    value={formRegistro.celular}
-                    onChange={(e) => {
-                      const d = formatear8DigitosEnVivo(e.target.value);
-                      setFormRegistro(prev => ({ ...prev, celular: d }));
-                    }}
-                    className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl pl-20 pr-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
-                  />
-                </div>
+                <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block mb-1">
+                  Correo Electrónico (Gmail) *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="ejemplo@gmail.com"
+                  value={formRegistro.email}
+                  onChange={(e) => setFormRegistro(prev => ({ ...prev, email: e.target.value.toLowerCase().trim() }))}
+                  className="w-full bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition"
+                />
               </div>
 
               {mensajeRegistro && (
@@ -749,7 +706,7 @@ export default function App() {
                 onClick={() => setVista('consulta')}
                 className="text-xs text-[#D99B52] hover:underline font-medium"
               >
-                ¿Ya tienes tarjeta? Consulta con tu RUT o Celular
+                ¿Ya tienes tarjeta? Consulta con tu RUT o Correo
               </button>
             </div>
           </div>
@@ -786,7 +743,7 @@ export default function App() {
                 <p className="text-base font-bold text-[#F5EDE2]">{clienteActual.nombre}</p>
                 <div className="flex flex-col text-[11px] font-mono mt-0.5 space-y-0.5">
                   <span className="text-[#D99B52]">RUT: {formatearRutEnVivo(clienteActual.rut)}</span>
-                  <span className="text-[#A89A90] text-[10px]">{clienteActual.telefono}</span>
+                  <span className="text-[#A89A90] text-[10px] truncate max-w-[180px]">{clienteActual.email}</span>
                 </div>
               </div>
               <button
@@ -897,7 +854,7 @@ export default function App() {
         )}
 
         {/* ================================================================= */}
-        {/* 4. TERMINAL DE CAJA (DOS OPCIONES ARRIBA Y UNA RANURA)            */}
+        {/* 4. TERMINAL DE CAJA (OPCIÓN A: RUT / OPCIÓN B: CORREO / QR)       */}
         {/* ================================================================= */}
         {vista === 'caja' && (
           <div className="w-full max-w-sm bg-[#1A1411]/92 backdrop-blur-xl border border-[#4A3B32] rounded-[32px] p-6 shadow-2xl space-y-6">
@@ -953,7 +910,6 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Botón de Escáner de Cámara */}
                 {!clienteCaja && !escaneandoQR && (
                   <button
                     onClick={iniciarEscanerCamara}
@@ -979,7 +935,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* CAJA: SELECTOR CON 2 OPCIONES Y UNA SOLA RANURA */}
                 {!clienteCaja && (
                   <div className="space-y-3">
                     <div className="grid grid-cols-2 bg-[#14100E] p-1 rounded-xl border border-[#3E3029]">
@@ -997,46 +952,37 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleCambioMetodoCaja('celular')}
+                        onClick={() => handleCambioMetodoCaja('email')}
                         className={`py-2 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition ${
-                          metodoCaja === 'celular'
+                          metodoCaja === 'email'
                             ? 'bg-[#C98A42] text-[#14100E] font-bold shadow'
                             : 'text-[#A89A90] hover:text-[#F5EDE2]'
                         }`}
                       >
-                        <Phone className="w-3.5 h-3.5" />
-                        Opción B: Celular
+                        <Mail className="w-3.5 h-3.5" />
+                        Opción B: Correo
                       </button>
                     </div>
 
                     <form onSubmit={buscarClienteEnCaja} className="space-y-2">
                       <div className="flex justify-between items-center mb-0.5">
                         <label className="text-xs font-semibold text-[#A89A90] uppercase tracking-wider block">
-                          {metodoCaja === 'rut' ? 'RUT del Cliente' : 'Celular (Chile)'}
+                          {metodoCaja === 'rut' ? 'RUT del Cliente' : 'Correo Electrónico'}
                         </label>
                         <span className="text-[10px] text-[#A89A90]">
-                          {metodoCaja === 'rut' ? 'Autoformato' : '+56 9 fijo'}
+                          {metodoCaja === 'rut' ? 'Autoformato' : 'Búsqueda exacta'}
                         </span>
                       </div>
 
                       <div className="flex gap-2">
-                        <div className="relative flex-1 flex items-center">
-                          {metodoCaja === 'celular' && (
-                            <span className="absolute left-3 text-xs font-mono text-[#D99B52] pointer-events-none">
-                              +56 9
-                            </span>
-                          )}
-                          <input
-                            type={metodoCaja === 'rut' ? 'text' : 'tel'}
-                            maxLength={metodoCaja === 'rut' ? 12 : 9}
-                            placeholder={metodoCaja === 'rut' ? 'Ej: 22.232.223-4' : '1234 5678'}
-                            value={valorRanuraCaja}
-                            onChange={handleInputRanuraCaja}
-                            className={`w-full bg-[#14100E] border border-[#3E3029] rounded-xl py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider ${
-                              metodoCaja === 'rut' ? 'px-4' : 'pl-16 pr-3'
-                            }`}
-                          />
-                        </div>
+                        <input
+                          type={metodoCaja === 'rut' ? 'text' : 'email'}
+                          maxLength={metodoCaja === 'rut' ? 12 : 60}
+                          placeholder={metodoCaja === 'rut' ? 'Ej: 22.232.223-4' : 'ejemplo@gmail.com'}
+                          value={valorRanuraCaja}
+                          onChange={handleInputRanuraCaja}
+                          className="flex-1 bg-[#14100E] border border-[#3E3029] rounded-xl px-4 py-3 text-sm font-mono text-[#F5EDE2] focus:outline-none focus:border-[#C98A42] transition tracking-wider"
+                        />
                         <button
                           type="submit"
                           disabled={cargandoCaja || !valorRanuraCaja}
@@ -1055,7 +1001,6 @@ export default function App() {
                   </p>
                 )}
 
-                {/* Cliente identificado en caja */}
                 {clienteCaja ? (
                   <div className="space-y-4">
                     <div className="bg-[#241D19] border border-[#4A3B32] rounded-2xl p-4 space-y-2.5 shadow-sm">
@@ -1082,8 +1027,8 @@ export default function App() {
                           <span className="font-mono text-[#D99B52] font-bold">{formatearRutEnVivo(clienteCaja.rut)}</span>
                         </div>
                         <div>
-                          <span className="text-[#8C7E75] block text-[10px] uppercase font-semibold">Celular</span>
-                          <span className="font-mono text-[#A89A90]">{clienteCaja.telefono}</span>
+                          <span className="text-[#8C7E75] block text-[10px] uppercase font-semibold">Correo</span>
+                          <span className="font-mono text-[#A89A90] truncate block">{clienteCaja.email}</span>
                         </div>
                       </div>
 
@@ -1121,7 +1066,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="text-center py-6 text-xs text-[#8C7E75] border border-dashed border-[#382B24] rounded-2xl">
-                    Ningún cliente seleccionado.<br />Elige RUT o Celular arriba, o escanea el QR.
+                    Ningún cliente seleccionado.<br />Elige Opción A (RUT) o B (Correo) arriba, o escanea el QR.
                   </div>
                 )}
               </div>
