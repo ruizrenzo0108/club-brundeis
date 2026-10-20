@@ -20,9 +20,6 @@ import { supabase } from './supabaseClient';
 
 const PIN_CAJA_CORRECTO = "Brunde1865";
 
-// Ruta privada para abrir el módulo de caja. Puedes cambiar este nombre.
-const RUTA_CAJA_SECRETA = "/brundeis-caja-interna-7f3a9";
-
 const META_SELLOS = 8;
 
 const PREMIO_TEXTO = "Café de Especialidad o Postre a elección";
@@ -141,12 +138,6 @@ export default function App() {
   // =========================================================================
 
   useEffect(() => {
-
-    // La caja solo se muestra al entrar directamente por la ruta secreta.
-    if (window.location.pathname.replace(/\/$/, '') === RUTA_CAJA_SECRETA) {
-      setVista('caja');
-      return;
-    }
 
     const sesionId = localStorage.getItem('brundeis_cliente_id');
 
@@ -986,6 +977,34 @@ export default function App() {
           </button>
 
 
+
+          <button
+
+            onClick={() => {
+
+              if (escaneandoQR) detenerEscanerCamara();
+
+              setVista('caja');
+
+            }}
+
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all ${
+
+              vista === 'caja'
+
+                ? 'bg-[#C98A42] text-[#14100E] shadow-md shadow-[#C98A42]/30 font-bold'
+
+                : 'text-[#A89A90] hover:text-[#F5EDE2]'
+
+            }`}
+
+          >
+
+            <Store className="w-3.5 h-3.5" />
+
+            Caja
+
+          </button>
 
         </div>
 
